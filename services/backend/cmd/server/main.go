@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Jaisheesh-2006/ChitSetu/api"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
@@ -39,8 +40,9 @@ func main() {
 	if err := store.EnsureIndexes(indexCtx); err != nil {
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
+	authService := auth.NewService(store.Database)
 	// Setup router.
-	router := api.SetupRouter(store)
+	router := api.SetupRouter(store,authService)
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
