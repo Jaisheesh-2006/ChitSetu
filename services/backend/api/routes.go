@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Jaisheesh-2006/ChitSetu/handlers"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/middleware"
 	"github.com/Jaisheesh-2006/ChitSetu/models"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
-	"github.com/Jaisheesh-2006/ChitSetu/middleware"
-	"github.com/Jaisheesh-2006/ChitSetu/handlers"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,9 +23,9 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	if err != nil {
 		panic(err)
 	}
-		userStore := models.NewUserStore(store.Database)
+	userStore := models.NewUserStore(store.Database)
 	supabaseAuthHandler := handlers.NewAuthHandler(supabaseVerifier, userStore, authService)
-supabaseRequireAuth := middleware.RequireAuth(supabaseVerifier)
+	supabaseRequireAuth := middleware.RequireAuth(supabaseVerifier)
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend"})
 	})
@@ -45,9 +45,9 @@ supabaseRequireAuth := middleware.RequireAuth(supabaseVerifier)
 	authGroup.POST("/register", authHandler.Register)
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.POST("/refresh", authHandler.Refresh)
-
-
-authGroup.POST("/verify", supabaseAuthHandler.Verify)
+	authGroup.POST("/forgot-password", authHandler.ForgotPassword)
+	authGroup.POST("/reset-password", authHandler.ResetPassword)
+	authGroup.POST("/verify", supabaseAuthHandler.Verify)
 	authGroup.GET("/me", supabaseRequireAuth, supabaseAuthHandler.Me)
 	return router
 }

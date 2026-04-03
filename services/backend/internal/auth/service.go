@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -18,24 +21,30 @@ import (
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"golang.org/x/crypto/argon2"
 )
 
 var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
 type Service struct {
-	usersCol   *mongo.Collection
-	sessionCol *mongo.Collection
-	jwtSecret  []byte
-	accessTTL  time.Duration
-	refreshTTL time.Duration
-	appBaseURL string
-	httpClient *http.Client
+	usersCol        *mongo.Collection
+	sessionCol      *mongo.Collection
+	jwtSecret       []byte
+	accessTTL       time.Duration
+	refreshTTL      time.Duration
+	resetTokenCol   *mongo.Collection
+	appBaseURL      string
+	resendAPIKey    string
+	resendFromEmail string
+	httpClient      *http.Client
 }
 type userDocument struct {
 	ID               string    `bson:"_id"`
 	Email            string    `bson:"email"`
 	PasswordHash     string    `bson:"password_hash"`
+	GoogleSub        string    `bson:"google_sub,omitempty"`
+	AuthProvider     string    `bson:"auth_provider"`
 	ProfileCompleted bool      `bson:"profile_completed"`
 	CreatedAt        time.Time `bson:"created_at"`
 	UpdatedAt        time.Time `bson:"updated_at"`
@@ -57,11 +66,15 @@ type TokenPair struct {
 	ExpiresInSec int64  `json:"expires_in_sec"`
 }
 
-func NewService(db *mongo.Database) *Service {
-	if db == nil {
-		return nil
-	}
+type passwordResetTokenDocument struct {
+	ID        string    `bson:"_id"`
+	UserID    string    `bson:"user_id"`
+	TokenHash string    `bson:"token_hash"`
+	ExpiresAt time.Time `bson:"expires_at"`
+	CreatedAt time.Time `bson:"created_at"`
+}
 
+func NewService(db *mongo.Database) *Service {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
 		secret = "dev-insecure-jwt-secret-change-me"
@@ -73,13 +86,16 @@ func NewService(db *mongo.Database) *Service {
 	}
 
 	return &Service{
-		usersCol:   db.Collection("users"),
-		sessionCol: db.Collection("auth_sessions"),
-		jwtSecret:  []byte(secret),
-		accessTTL:  15 * time.Minute,
-		refreshTTL: 7 * 24 * time.Hour,
-		appBaseURL: strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		usersCol:        db.Collection("users"),
+		sessionCol:      db.Collection("auth_sessions"),
+		resetTokenCol:   db.Collection("password_reset_tokens"),
+		jwtSecret:       []byte(secret),
+		accessTTL:       15 * time.Minute,
+		refreshTTL:      7 * 24 * time.Hour,
+		appBaseURL:      strings.TrimRight(baseURL, "/"),
+		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		resendFromEmail: strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
+		httpClient:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 func (s *Service) JWTSecret() []byte {
@@ -321,4 +337,106 @@ func subtleCompare(a, b []byte) bool {
 		result |= a[i] ^ b[i]
 	}
 	return result == 0
+}
+
+func (s *Service) RequestPasswordReset(ctx context.Context, email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	var user userDocument
+	err := s.usersCol.FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Don't reveal account existence, but also don't return a token for non-users
+			return "", nil
+		}
+		return "", fmt.Errorf("find user: %w", err)
+	}
+
+	token, err := randomToken(32)
+	if err != nil {
+		return "", fmt.Errorf("generate reset token: %w", err)
+	}
+
+	_, err = s.resetTokenCol.UpdateOne(
+		ctx,
+		bson.M{"user_id": user.ID},
+		bson.M{
+			"$set": bson.M{
+				"token_hash": tokenHash(token),
+				"expires_at": time.Now().Add(1 * time.Hour),
+				"created_at": time.Now(),
+			},
+		},
+		options.UpdateOne().SetUpsert(true),
+	)
+	if err != nil {
+		return "", fmt.Errorf("store reset token: %w", err)
+	}
+
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", s.appBaseURL, token)
+	log.Printf("Password reset link for %s: %s", email, resetLink)
+
+	// if s.resendAPIKey != "" && s.resendFromEmail != "" {
+	// 	_ = s.sendPasswordResetEmail(email, resetLink)
+	// }
+
+	return token, nil
+}
+
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	if len(newPassword) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+
+	hash := tokenHash(token)
+	var resetDoc passwordResetTokenDocument
+	err := s.resetTokenCol.FindOne(ctx, bson.M{
+		"token_hash": hash,
+		"expires_at": bson.M{"$gt": time.Now()},
+	}).Decode(&resetDoc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("invalid or expired reset token")
+		}
+		return fmt.Errorf("find reset token: %w", err)
+	}
+
+	newHash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	_, err = s.usersCol.UpdateOne(ctx, bson.M{"_id": resetDoc.UserID}, bson.M{
+		"$set": bson.M{"password_hash": newHash, "updated_at": time.Now()},
+	})
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+
+	_, _ = s.resetTokenCol.DeleteOne(ctx, bson.M{"_id": resetDoc.ID})
+
+	return nil
+}
+
+func (s *Service) sendPasswordResetEmail(toEmail, resetLink string) error {
+	payload := map[string]any{
+		"from":    s.resendFromEmail,
+		"to":      []string{toEmail},
+		"subject": "Reset Your ChitSetu Password",
+		"html":    fmt.Sprintf("<p>You requested a password reset.</p><p>Click the link below to set a new password:</p><p><a href=\"%s\">Reset Password</a></p><p>This link will expire in 1 hour.</p>", resetLink),
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest(http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+s.resendAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
 }
