@@ -17,13 +17,7 @@ def home():
 
 @app.post("/predict")
 def predict(data: dict):
-    """
-    Run the ML model to produce a trust score.
-
-    Accepts either:
-      • has_history=true  payload  (credit card history)
-      • has_history=false payload  (no credit history / cold start)
-    """
+  
     try:
         result = predict_user(data)
         return result
@@ -33,24 +27,7 @@ def predict(data: dict):
 
 @app.post("/generate-credit")
 def generate_credit(data: dict):
-    """
-    Simulate PAN verification and CIBIL credit history lookup.
 
-    Request body:
-        {
-            "pan":              "ABCDE1234F",
-            "age":              30,
-            "income":           50000,
-            "employment_years": 3
-        }
-
-    Response:
-        {
-            "pan_verified": true,
-            "has_cibil":    true,
-            "cibil_score":  720   // null when has_cibil is false
-        }
-    """
     pan = str(data.get("pan", "")).strip().upper()
     if not pan:
         raise HTTPException(status_code=400, detail="pan is required")
