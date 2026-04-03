@@ -24,8 +24,8 @@ import (
 var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
 type Service struct {
-	usersCol    *mongo.Collection
-	sessionCol  *mongo.Collection
+	usersCol   *mongo.Collection
+	sessionCol *mongo.Collection
 	jwtSecret  []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration
@@ -257,4 +257,68 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (*TokenPair,
 	}
 
 	return s.IssueTokenPair(ctx, session.UserID)
+}
+
+func (s *Service) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if !emailRegex.MatchString(email) {
+		return nil, errors.New("invalid email format")
+	}
+
+	var user userDocument
+	err := s.usersCol.FindOne(ctx, bson.M{"email": email}).Decode(&user)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.New("invalid email or password")
+		}
+		return nil, fmt.Errorf("find user: %w", err)
+	}
+
+	ok, err := verifyPassword(password, user.PasswordHash)
+	if err != nil {
+		return nil, fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("invalid email or password")
+	}
+
+	return s.IssueTokenPair(ctx, user.ID)
+}
+
+func verifyPassword(password, encodedHash string) (bool, error) {
+	parts := strings.Split(encodedHash, "$")
+	if len(parts) != 6 {
+		return false, errors.New("invalid encoded hash format")
+	}
+
+	var memory uint32
+	var iterations uint32
+	var parallelism uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
+		return false, fmt.Errorf("parse hash params: %w", err)
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false, fmt.Errorf("decode salt: %w", err)
+	}
+
+	decodedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false, fmt.Errorf("decode hash: %w", err)
+	}
+
+	recomputed := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(decodedHash)))
+	return subtleCompare(decodedHash, recomputed), nil
+}
+
+func subtleCompare(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var result byte
+	for i := range a {
+		result |= a[i] ^ b[i]
+	}
+	return result == 0
 }
