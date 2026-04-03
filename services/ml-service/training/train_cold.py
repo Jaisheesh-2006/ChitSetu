@@ -4,24 +4,18 @@ from xgboost import XGBClassifier # type: ignore
 import joblib
 import os
 
-# Get base directory (ml-service/)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Paths
 DATA_PATH = os.path.join(BASE_DIR, "data", "credit_risk_dataset.csv")
 MODEL_DIR = os.path.join(BASE_DIR, "models")
 MODEL_PATH = os.path.join(MODEL_DIR, "cold_model.pkl")
 
-# Ensure models folder exists
 os.makedirs(MODEL_DIR, exist_ok=True)
 
-# Load dataset
 df = pd.read_csv(DATA_PATH)
 
-# Clean
 df = df.dropna()
 
-# Features
 X = df[[
     "person_income",
     "person_age",
@@ -30,27 +24,25 @@ X = df[[
     "loan_percent_income"
 ]]
 
-# Target
 y = df["loan_status"]
 
-# Split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-# Model
+
 model = XGBClassifier(
-    n_estimators=150,
-    max_depth=5,
-    learning_rate=0.07,
-    use_label_encoder=False,
+    n_estimators=100,
+    max_depth=4,
+    learning_rate=0.08,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_alpha=0.1,
+    reg_lambda=1,
     eval_metric="logloss"
 )
-
-# Train
 model.fit(X_train, y_train)
 
-# Save model
 joblib.dump(model, MODEL_PATH)
 
 print(f"Cold-start model trained and saved at: {MODEL_PATH}")
