@@ -7,11 +7,12 @@ import (
 
 	"github.com/Jaisheesh-2006/ChitSetu/handlers"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/users"
 	"github.com/Jaisheesh-2006/ChitSetu/middleware"
 	"github.com/Jaisheesh-2006/ChitSetu/models"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
-	"github.com/gin-gonic/gin"
 	pkgmiddleware "github.com/Jaisheesh-2006/ChitSetu/pkg/middleware"
+	"github.com/gin-gonic/gin"
 )
 
 // DBPinger captures the minimum database behavior needed for health checks.
@@ -28,6 +29,8 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	userStore := models.NewUserStore(store.Database)
 	supabaseAuthHandler := handlers.NewAuthHandler(supabaseVerifier, userStore, authService)
 	supabaseRequireAuth := middleware.RequireAuth(supabaseVerifier)
+	profileRepo := users.NewRepository(store.Database)
+	profileHandler := users.NewHandler(profileRepo)
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend"})
 	})
