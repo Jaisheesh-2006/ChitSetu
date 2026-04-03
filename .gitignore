@@ -88,3 +88,8 @@ docker-data/
 *.db
 *.sqlite
 *.sqlite3
+
+# ------------------------------
+# Miscellaneous
+# ------------------------------
+prompt.md
