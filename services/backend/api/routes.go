@@ -11,6 +11,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/models"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/gin-gonic/gin"
+	pkgmiddleware "github.com/Jaisheesh-2006/ChitSetu/pkg/middleware"
 )
 
 // DBPinger captures the minimum database behavior needed for health checks.
@@ -19,6 +20,7 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	router := gin.New()
 	router.Use(middleware.CORS(), gin.Logger(), gin.Recovery())
 	authHandler := auth.NewHandler(authService)
+	authMiddleware := pkgmiddleware.JWTAuth(authService.JWTSecret())
 	supabaseVerifier, err := middleware.NewVerifierFromEnv()
 	if err != nil {
 		panic(err)
@@ -49,5 +51,12 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	authGroup.POST("/reset-password", authHandler.ResetPassword)
 	authGroup.POST("/verify", supabaseAuthHandler.Verify)
 	authGroup.GET("/me", supabaseRequireAuth, supabaseAuthHandler.Me)
+
+	userGroup := router.Group("/user")
+	userGroup.Use(authMiddleware)
+	userGroup.POST("/profile", profileHandler.UpsertProfile)
+	userGroup.POST("/kyc/verify-pan", profileHandler.VerifyPAN)
+	userGroup.POST("/kyc/fetch-history", profileHandler.FetchHistory)
+	userGroup.POST("/kyc/run-ml", profileHandler.RunML)
 	return router
 }
