@@ -1,64 +1,252 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence, useInView } from "framer-motion";
+import Navbar from "@/components/Navbar";
+import GoogleAuthBtn from "@/components/GoogleAuthBtn";
+import AnimatedButton from "@/components/ui/AnimatedButton";
+import { useAuth } from "@/hooks/useAuth";
+
+type AuthTab = "login" | "register";
+
+/* ── 3D Feature Card ─── */
+function FeatureCard({ icon, title, desc, i }: { icon: string; title: string; desc: string; i: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [rot, setRot] = useState({ x: 0, y: 0 });
+  const [h, setH] = useState(false);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <motion.div ref={ref}
+      initial={{ opacity: 0, y: 30, rotateX: 8 }}
+      animate={{ opacity: 1, y: 0, rotateX: 0 }}
+      transition={{ duration: 0.6, delay: 0.4 + i * 0.1, ease: [0.16, 1, 0.3, 1] }}
+      onMouseMove={(e) => { if (!ref.current) return; const r = ref.current.getBoundingClientRect(); setRot({ x: -((e.clientY - (r.top + r.height / 2)) / (r.height / 2)) * 5, y: ((e.clientX - (r.left + r.width / 2)) / (r.width / 2)) * 5 }); }}
+      onMouseEnter={() => setH(true)} onMouseLeave={() => { setRot({ x: 0, y: 0 }); setH(false); }}
+      style={{
+        position: "relative", overflow: "hidden",
+        background: "var(--color-bg-card)", border: "none", borderRadius: 10,
+        padding: "14px 16px",
+        boxShadow: h ? "var(--shadow-hover), var(--shadow-glow-sm)" : "var(--shadow-card)",
+        transform: h ? `perspective(600px) rotateX(${rot.x}deg) rotateY(${rot.y}deg) translateY(-4px)` : "perspective(600px) rotateX(0) rotateY(0) translateY(0)",
+        transition: "box-shadow 0.35s, transform 0.3s", transformStyle: "preserve-3d", cursor: "default",
+      }}
+    >
+      {/* Glossy shine */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, width: "40%", height: "100%",
+        background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent)",
+        transform: h ? "translateX(350%) skewX(-15deg)" : "translateX(-100%) skewX(-15deg)",
+        transition: "transform 0.7s ease", pointerEvents: "none", zIndex: 1,
+      }} />
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, background: h ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)" : "linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent)", transition: "background 0.3s", pointerEvents: "none" }} />
+      <div style={{ position: "relative", zIndex: 2 }}>
+        <motion.span animate={h ? { scale: 1.15, rotate: 5 } : { scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 400 }} style={{ display: "inline-block", fontSize: 22 }}>{icon}</motion.span>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)", margin: "8px 0 2px" }}>{title}</p>
+        <p style={{ fontSize: 11, color: "var(--color-text-muted)", margin: 0, lineHeight: 1.5 }}>{desc}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+/* ── Animated Counter ─── */
+function Counter({ end, label }: { end: string; label: string }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.9, duration: 0.5 }} style={{ textAlign: "center" }}>
+      <p style={{ fontSize: 22, fontWeight: 800, color: "var(--color-accent)", letterSpacing: -1 }}>{end}</p>
+      <p style={{ fontSize: 10, color: "var(--color-text-muted)", margin: "2px 0 0", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
+    </motion.div>
+  );
+}
+
+/* ── Main Page ─── */
+export default function LandingPage() {
+  const [tab, setTab] = useState<AuthTab>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { login, register, isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  React.useEffect(() => { if (isAuthenticated) router.push("/dashboard"); }, [isAuthenticated, router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault(); setError("");
+    if (!email.trim() || !password.trim()) { setError("Fill in all fields."); return; }
+    if (tab === "register") { if (password.length < 8) { setError("Min 8 characters."); return; } if (password !== confirm) { setError("Passwords don't match."); return; } }
+    setLoading(true);
+    try { tab === "login" ? await login(email, password) : await register(email, password); router.push("/dashboard"); }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setLoading(false); }
+  };
+
+  const sw = (t: AuthTab) => { setTab(t); setError(""); setPassword(""); setConfirm(""); };
+
+  return (
+    <div style={{ background: "var(--color-bg)", minHeight: "100vh", overflow: "hidden" }}>
+      <Navbar />
+
+      {/* Ambient background orbs */}
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0 }}>
+        <motion.div animate={{ x: [0, 30, 0], y: [0, -20, 0] }} transition={{ repeat: Infinity, duration: 12, ease: "easeInOut" }}
+          style={{ position: "absolute", top: "10%", left: "15%", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(249,115,22,0.04), transparent)", filter: "blur(60px)" }} />
+        <motion.div animate={{ x: [0, -20, 0], y: [0, 25, 0] }} transition={{ repeat: Infinity, duration: 15, ease: "easeInOut" }}
+          style={{ position: "absolute", bottom: "20%", right: "10%", width: 250, height: 250, borderRadius: "50%", background: "radial-gradient(circle, rgba(96,165,250,0.03), transparent)", filter: "blur(50px)" }} />
+      </div>
+
+      <main style={{ position: "relative", zIndex: 1, maxWidth: 1100, margin: "0 auto", padding: "48px 20px", display: "flex", flexWrap: "wrap", gap: 48, alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 52px)" }}>
+
+        {/* ── Left ── */}
+        <div style={{ flex: "1 1 440px", maxWidth: 500 }}>
+          {/* Badge */}
+          <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--color-bg-card)", borderRadius: 6, padding: "5px 12px", marginBottom: 20, boxShadow: "var(--shadow-card)" }}>
+            <motion.span animate={{ scale: [1, 1.4, 1] }} transition={{ repeat: Infinity, duration: 2 }} style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--color-accent)", boxShadow: "0 0 8px rgba(249,115,22,0.4)" }} />
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-accent)", letterSpacing: 1.2, textTransform: "uppercase" }}>Live Platform</span>
+          </motion.div>
+
+          {/* Title */}
+          <motion.h1 initial={{ opacity: 0, y: 20, filter: "blur(8px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            style={{ fontSize: 44, fontWeight: 800, color: "var(--color-text)", lineHeight: 1.1, letterSpacing: "-0.03em", margin: "0 0 8px" }}>
+            Chit funds,
+          </motion.h1>
+          <motion.h1 initial={{ opacity: 0, y: 20, filter: "blur(8px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            transition={{ duration: 0.7, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.1, letterSpacing: "-0.03em", margin: "0 0 16px" }}>
+            <span className="gradient-text">made simple.</span>
+          </motion.h1>
+
+          {/* Body */}
+          <motion.p initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.45 }}
+            style={{ fontSize: 15, color: "var(--color-text-secondary)", lineHeight: 1.7, maxWidth: 420, margin: "0 0 28px" }}>
+            A transparent platform for managing chit funds with ML-powered risk scoring, real-time auctions, and secure payments.
+          </motion.p>
+
+          {/* Stats bar */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55, duration: 0.5 }}
+            style={{ display: "flex", gap: 24, marginBottom: 28, padding: "12px 16px", background: "var(--color-bg-card)", borderRadius: 10, boxShadow: "var(--shadow-card)" }}>
+            <Counter end="1,200+" label="Users" />
+            <div style={{ width: 1, background: "rgba(255,255,255,0.04)" }} />
+            <Counter end="₹4.2Cr" label="Pool Size" />
+            <div style={{ width: 1, background: "rgba(255,255,255,0.04)" }} />
+            <Counter end="99.8%" label="Uptime" />
+          </motion.div>
+
+          {/* Feature Grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              { icon: "🔒", t: "ML Risk Scoring", s: "AI-powered trust assessment" },
+              { icon: "⚡", t: "Real-time Auctions", s: "Instant bidding system" },
+              { icon: "💳", t: "Secure Payments", s: "UPI & Razorpay integrated" },
+              { icon: "📊", t: "Transparent", s: "Blockchain-backed records" },
+            ].map((c, i) => <FeatureCard key={c.t} icon={c.icon} title={c.t} desc={c.s} i={i} />)}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+        {/* ── Auth Card ── */}
+        <motion.div
+          initial={{ opacity: 0, y: 30, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          style={{ flex: "1 1 340px", maxWidth: 400, width: "100%" }}
+        >
+          <div style={{
+            position: "relative", overflow: "hidden",
+            background: "var(--color-bg-card)", borderRadius: 12, border: "none",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.02)",
+          }}>
+            {/* Accent bar */}
+            <div style={{ height: 2, background: "var(--gradient-primary)" }} />
+            {/* Top shine */}
+            <div style={{ position: "absolute", top: 2, left: 0, right: 0, height: 1, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)", pointerEvents: "none" }} />
+
+            <div style={{ padding: "24px 26px 26px" }}>
+              {/* Tabs */}
+              <div style={{ display: "flex", marginBottom: 22, background: "var(--color-bg-subtle)", borderRadius: 8, padding: 3, boxShadow: "inset 0 1px 3px rgba(0,0,0,0.3)" }}>
+                {(["login", "register"] as AuthTab[]).map((t) => (
+                  <button key={t} onClick={() => sw(t)} style={{
+                    flex: 1, padding: "9px 0", borderRadius: 6, fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer",
+                    fontFamily: '"Inter",sans-serif',
+                    background: tab === t ? "var(--gradient-primary)" : "transparent",
+                    color: tab === t ? "#fff" : "var(--color-text-muted)",
+                    boxShadow: tab === t ? "0 2px 8px rgba(249,115,22,0.25)" : "none",
+                    transition: "all 0.25s",
+                  }}>{t === "login" ? "Log in" : "Sign up"}</button>
+                ))}
+              </div>
+
+              <motion.h2 key={tab + "-title"} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+                style={{ fontSize: 20, fontWeight: 700, color: "var(--color-text)", margin: "0 0 4px" }}>
+                {tab === "login" ? "Welcome back" : "Create account"}
+              </motion.h2>
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: "0 0 18px" }}>
+                {tab === "login" ? "Enter credentials to continue." : "Sign up to get started."}
+              </p>
+
+              <AnimatePresence mode="wait">
+                <motion.form key={tab} initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.25 }}
+                  onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 5, letterSpacing: 0.5 }}>EMAIL</label>
+                    <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required className="glow-input" />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", letterSpacing: 0.5 }}>PASSWORD</label>
+                      {tab === "login" && (
+                        <button type="button" onClick={() => router.push("/forgot-password")}
+                          style={{ background: "none", border: "none", color: "var(--color-accent)", fontSize: 10, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                          Forgot?
+                        </button>
+                      )}
+                    </div>
+                    <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required className="glow-input" />
+                  </div>
+                  {tab === "register" && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 5, letterSpacing: 0.5 }}>CONFIRM PASSWORD</label>
+                      <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" required className="glow-input" />
+                    </motion.div>
+                  )}
+                  {error && (
+                    <motion.div initial={{ opacity: 0, y: -6, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                      style={{ fontSize: 12, color: "var(--color-danger)", background: "var(--color-danger-light)", borderRadius: 6, padding: "8px 12px", boxShadow: "0 2px 8px rgba(239,68,68,0.1)" }}>
+                      {error}
+                    </motion.div>
+                  )}
+                  <AnimatedButton type="submit" variant="primary" fullWidth disabled={loading} size="md">
+                    {loading ? "…" : tab === "login" ? "Log in →" : "Create account →"}
+                  </AnimatedButton>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.04)" }} />
+                    <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontWeight: 600 }}>OR</span>
+                    <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.04)" }} />
+                  </div>
+                  <GoogleAuthBtn />
+                </motion.form>
+              </AnimatePresence>
+
+              <p style={{ textAlign: "center", fontSize: 11, color: "var(--color-text-muted)", marginTop: 14 }}>
+                {tab === "login" ? "No account? " : "Have an account? "}
+                <button onClick={() => sw(tab === "login" ? "register" : "login")}
+                  style={{ background: "none", border: "none", color: "var(--color-accent)", fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontSize: 11 }}>
+                  {tab === "login" ? "Sign up" : "Log in"}
+                </button>
+              </p>
+            </div>
+          </div>
+
+          {/* Trust badges */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
+            style={{ display: "flex", gap: 6, justifyContent: "center", marginTop: 14 }}>
+            {["🔒 256-bit SSL", "🏛 RBI Compliant", "🌐 GDPR Ready"].map((t) => (
+              <span key={t} style={{ fontSize: 9, color: "var(--color-text-muted)", fontWeight: 500, background: "var(--color-bg-card)", borderRadius: 4, padding: "3px 8px", boxShadow: "var(--shadow-card)" }}>{t}</span>
+            ))}
+          </motion.div>
+        </motion.div>
       </main>
     </div>
   );
