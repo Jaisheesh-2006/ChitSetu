@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Jaisheesh-2006/ChitSetu/api"
+	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
 
@@ -37,10 +39,8 @@ func main() {
 	if err := store.EnsureIndexes(indexCtx); err != nil {
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
-	//Setup Router
-	router := api.SetupRouter(
-		store
-	)
+	// Setup router.
+	router := api.SetupRouter(store)
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
