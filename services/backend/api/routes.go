@@ -17,7 +17,7 @@ import (
 
 func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	router := gin.New()
-	router.Use(gin.Logger(), gin.Recovery())
+	router.Use(middleware.CORS(), gin.Logger(), gin.Recovery())
 	authHandler := auth.NewHandler(authService)
 	supabaseVerifier, err := middleware.NewVerifierFromEnv()
 	if err != nil {
