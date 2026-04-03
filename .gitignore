@@ -1,2 +1,90 @@
-# Ignore local environment files
+# ------------------------------
+# Environment and secrets
+# ------------------------------
 .env
+.env.*
+!.env.example
+
+# ------------------------------
+# OS and editor files
+# ------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ------------------------------
+# Logs and runtime files
+# ------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+
+# ------------------------------
+# Dependencies and package managers
+# ------------------------------
+node_modules/
+.pnpm-store/
+
+# ------------------------------
+# Build, cache, and coverage outputs
+# ------------------------------
+dist/
+build/
+out/
+tmp/
+temp/
+.cache/
+coverage/
+.nyc_output/
+
+# ------------------------------
+# Python artifacts (for ML/service modules)
+# ------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ------------------------------
+# Solidity/Hardhat/Foundry artifacts
+# ------------------------------
+artifacts/
+cache/
+typechain/
+typechain-types/
+broadcast/
+out/
+
+# ------------------------------
+# Frontend framework outputs
+# ------------------------------
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+
+# ------------------------------
+# Docker and local database volumes
+# ------------------------------
+docker-data/
+*.db
+*.sqlite
+*.sqlite3
