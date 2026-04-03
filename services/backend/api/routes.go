@@ -61,5 +61,9 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	userGroup.POST("/kyc/verify-pan", profileHandler.VerifyPAN)
 	userGroup.POST("/kyc/fetch-history", profileHandler.FetchHistory)
 	userGroup.POST("/kyc/run-ml", profileHandler.RunML)
+
+	usersGroup := router.Group("/users")
+	usersGroup.Use(authMiddleware)
+	usersGroup.GET("/profile", profileHandler.GetProfile)
 	return router
 }
