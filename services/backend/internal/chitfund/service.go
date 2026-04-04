@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 )
 
 type Service struct {
@@ -131,6 +132,141 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 	}
 
 	return &FundWithCount{Fund: *created, CurrentMemberCount: 1}, nil
+}
+
+func (s *Service) StartUnderfilledFundCleanupScheduler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Hour
+	}
+
+	run := func() {
+		runCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := s.RunStartDateUnderfilledFundCleanup(runCtx); err != nil {
+			log.Printf("underfilled fund cleanup failed: %v", err)
+		}
+	}
+
+	go func() {
+		run() // run once at startup
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func (s *Service) StartDailyUnderfilledFundCleanupCron() *cron.Cron {
+	c := cron.New(cron.WithLocation(time.Local))
+	_, err := c.AddFunc("10 0 * * *", func() {
+		runCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := s.RunStartDateUnderfilledFundCleanup(runCtx); err != nil {
+			log.Printf("underfilled fund daily cleanup cron failed: %v", err)
+		}
+	})
+	if err != nil {
+		log.Printf("failed to register underfilled fund cleanup cron: %v", err)
+		return c
+	}
+
+	c.Start()
+	return c
+}
+
+func (s *Service) RunStartDateUnderfilledFundCleanup(ctx context.Context) error {
+	funds, err := s.repository.ListOpenFunds(ctx)
+	if err != nil {
+		return fmt.Errorf("list open funds for cleanup: %w", err)
+	}
+
+	today := time.Now()
+	for _, fund := range funds {
+		if !sameUTCDate(today, fund.StartDate) {
+			continue
+		}
+
+		activeCount, err := s.repository.CountActiveMembers(ctx, fund.ID)
+		if err != nil {
+			log.Printf("cleanup: failed counting members for fund %s: %v", fund.ID, err)
+			continue
+		}
+		if activeCount >= int64(fund.MaxMembers) {
+			continue
+		}
+
+		members, err := s.repository.ListMembersByFund(ctx, fund.ID)
+		if err != nil {
+			log.Printf("cleanup: failed listing members for fund %s: %v", fund.ID, err)
+			continue
+		}
+
+		userIDSet := make(map[string]struct{}, len(members))
+		for _, member := range members {
+			if member.UserID != "" {
+				userIDSet[member.UserID] = struct{}{}
+			}
+		}
+
+		userIDs := make([]string, 0, len(userIDSet))
+		for userID := range userIDSet {
+			userIDs = append(userIDs, userID)
+		}
+
+		usersByID, err := s.repository.ListUsersByIDs(ctx, userIDs)
+		if err != nil {
+			log.Printf("cleanup: failed fetching user emails for fund %s: %v", fund.ID, err)
+			continue
+		}
+
+		reason := fmt.Sprintf(
+			"Your fund '%s' was deleted because it did not reach required members by the start date (%d/%d joined).",
+			fund.Name,
+			activeCount,
+			fund.MaxMembers,
+		)
+
+		notified := make(map[string]struct{})
+		for _, user := range usersByID {
+			email := strings.TrimSpace(user.Email)
+			if email == "" {
+				continue
+			}
+			if _, seen := notified[email]; seen {
+				continue
+			}
+			notified[email] = struct{}{}
+
+			if err := s.sendFundDeletedEmail(ctx, email, fund.Name, reason); err != nil {
+				log.Printf("cleanup: failed sending fund deletion email to %s for fund %s: %v", email, fund.ID, err)
+			}
+		}
+
+		if err := s.repository.DeleteFundCascade(ctx, fund.ID); err != nil {
+			log.Printf("cleanup: failed deleting underfilled fund %s: %v", fund.ID, err)
+			continue
+		}
+
+		log.Printf("cleanup: deleted underfilled fund %s (%d/%d active members)", fund.ID, activeCount, fund.MaxMembers)
+	}
+
+	return nil
+}
+
+func sameUTCDate(a, b time.Time) bool {
+	au := a.UTC()
+	bu := b.UTC()
+	ay, am, ad := au.Date()
+	by, bm, bd := bu.Date()
+	return ay == by && am == bm && ad == bd
 }
 
 func (s *Service) GetApplicationStatus(ctx context.Context, userID, fundID string) (*ApplicationStatusResponse, error) {
@@ -334,6 +470,53 @@ func (s *Service) sendMembershipDecisionEmail(ctx context.Context, toEmail, fund
 
 	if s.resendAPIKey == "" || s.resendFromEmail == "" {
 		log.Printf("resend not configured, membership decision for %s (%s): %s", recipient, fundName, decision)
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"from":    s.resendFromEmail,
+		"to":      []string{recipient},
+		"subject": subject,
+		"text":    textBody,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal resend payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create resend request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.resendAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("call resend api: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("resend api returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+func (s *Service) sendFundDeletedEmail(ctx context.Context, toEmail, fundName, reason string) error {
+	recipient := strings.TrimSpace(toEmail)
+	if recipient == "" {
+		return nil
+	}
+
+	subject := fmt.Sprintf("Fund Deleted: %s", fundName)
+	textBody := reason
+
+	if s.resendAPIKey == "" || s.resendFromEmail == "" {
+		log.Printf("resend not configured, fund deletion notice for %s (%s): %s", recipient, fundName, reason)
 		return nil
 	}
 

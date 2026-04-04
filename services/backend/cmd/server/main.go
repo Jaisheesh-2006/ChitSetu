@@ -73,6 +73,9 @@ func main() {
 	auctionService.StartScheduler(auctionSchedulerCtx)
 
 	chitfundService := chitfund.NewService(chitfundRepo)
+	fundCleanupCron := chitfundService.StartDailyUnderfilledFundCleanupCron()
+	defer fundCleanupCron.Stop()
+
 	chitfundHandler := chitfund.NewHandler(chitfundService)
 
 	chatRepo := chat.NewRepository(store.Database)

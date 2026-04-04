@@ -15,11 +15,16 @@ import (
 const opTimeout = 5 * time.Second
 
 type Repository struct {
-	db         *mongo.Database
-	fundsCol   *mongo.Collection
-	membersCol *mongo.Collection
-	usersCol   *mongo.Collection
-	contribCol *mongo.Collection
+	db                *mongo.Database
+	fundsCol          *mongo.Collection
+	membersCol        *mongo.Collection
+	usersCol          *mongo.Collection
+	contribCol        *mongo.Collection
+	bidsCol           *mongo.Collection
+	auctionSessionCol *mongo.Collection
+	auctionResultsCol *mongo.Collection
+	payoutsCol        *mongo.Collection
+	chatMessagesCol   *mongo.Collection
 }
 
 type Fund struct {
@@ -92,11 +97,16 @@ type FundContribution struct {
 
 func NewRepository(db *mongo.Database) *Repository {
 	return &Repository{
-		db:         db,
-		fundsCol:   db.Collection("funds"),
-		membersCol: db.Collection("fund_members"),
-		usersCol:   db.Collection("users"),
-		contribCol: db.Collection("contributions"),
+		db:                db,
+		fundsCol:          db.Collection("funds"),
+		membersCol:        db.Collection("fund_members"),
+		usersCol:          db.Collection("users"),
+		contribCol:        db.Collection("contributions"),
+		bidsCol:           db.Collection("bids"),
+		auctionSessionCol: db.Collection("auction_sessions"),
+		auctionResultsCol: db.Collection("auction_results"),
+		payoutsCol:        db.Collection("payouts"),
+		chatMessagesCol:   db.Collection("chat_messages"),
 	}
 }
 
@@ -466,6 +476,55 @@ func (r *Repository) ListUsersByIDs(ctx context.Context, userIDs []string) (map[
 		return nil, fmt.Errorf("iterate users by ids: %w", err)
 	}
 	return result, nil
+}
+
+func (r *Repository) DeleteFundCascade(ctx context.Context, fundID string) error {
+	session, err := r.db.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("start fund delete session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sc context.Context) (interface{}, error) {
+		filter := bson.D{{Key: "fund_id", Value: fundID}}
+
+		if _, err := r.contribCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete contributions: %w", err)
+		}
+		if _, err := r.membersCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete fund members: %w", err)
+		}
+		if _, err := r.bidsCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete bids: %w", err)
+		}
+		if _, err := r.auctionSessionCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete auction sessions: %w", err)
+		}
+		if _, err := r.auctionResultsCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete auction results: %w", err)
+		}
+		if _, err := r.payoutsCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete payouts: %w", err)
+		}
+		if _, err := r.chatMessagesCol.DeleteMany(sc, filter); err != nil {
+			return nil, fmt.Errorf("delete chat messages: %w", err)
+		}
+
+		result, err := r.fundsCol.DeleteOne(sc, bson.D{{Key: "_id", Value: fundID}})
+		if err != nil {
+			return nil, fmt.Errorf("delete fund: %w", err)
+		}
+		if result.DeletedCount == 0 {
+			return nil, fmt.Errorf("fund not found")
+		}
+
+		return nil, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 var ErrMembershipAlreadyExists = fmt.Errorf("membership already exists")
