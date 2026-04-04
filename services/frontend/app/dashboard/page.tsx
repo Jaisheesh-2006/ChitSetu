@@ -21,7 +21,6 @@ import {
   getMyContributions,
   type ProfileInput,
   type CreateFundInput,
-  type WalletInfo,
 } from "@/services/api";
 
 type Tab = "overview" | "profile" | "create";
@@ -188,11 +187,9 @@ function Overview() {
   const [risk, setRisk] = useState<any>(null);
   const [contribs, setContribs] = useState<any[]>([]);
 
-  const [wallet, setWallet] = useState<WalletInfo | null>(null);
-
   useEffect(() => {
     (async () => {
-      const [f, r, c, w] = await Promise.allSettled([
+      const [f, r, c] = await Promise.allSettled([
         getMyFunds(),
         getRiskScore(),
         getMyContributions(),
@@ -207,9 +204,8 @@ function Overview() {
 
     const interval = setInterval(async () => {
       try {
-        const [c, w] = await Promise.allSettled([getMyContributions()]);
+        const [c] = await Promise.allSettled([getMyContributions()]);
         if (c.status === "fulfilled") setContribs(c.value || []);
-        if (w.status === "fulfilled") setWallet(w.value);
       } catch {
         // Ignore errors in periodic refresh
       }
@@ -845,7 +841,11 @@ function Profile({ onUpdate }: { onUpdate: () => void }) {
             hover={true}
             depth={true}
             delay={0.05}
-            style={{ position: "relative", overflow: "hidden", padding: "24px" }}
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              padding: "24px",
+            }}
           >
             {/* Background glow */}
             <div
@@ -988,7 +988,12 @@ function Profile({ onUpdate }: { onUpdate: () => void }) {
         )}
 
         {/* Profile Form */}
-        <GlassCard hover={false} depth={false} delay={0.1} style={{ padding: "24px" }}>
+        <GlassCard
+          hover={false}
+          depth={false}
+          delay={0.1}
+          style={{ padding: "24px" }}
+        >
           <div
             style={{
               display: "flex",
@@ -1329,7 +1334,12 @@ function CreateFund() {
   return (
     <div style={{ width: "100%" }}>
       {/* Step Progress Header */}
-      <GlassCard hover={false} depth={false} delay={0} style={{ padding: "20px" }}>
+      <GlassCard
+        hover={false}
+        depth={false}
+        delay={0}
+        style={{ padding: "20px" }}
+      >
         <div
           style={{
             display: "flex",
@@ -1480,7 +1490,7 @@ function CreateFund() {
                       fontWeight: 700,
                       color: "var(--color-text)",
                       margin: "0 0 4px",
-                      padding: 12
+                      padding: 12,
                     }}
                   >
                     Fund Details
@@ -1490,12 +1500,12 @@ function CreateFund() {
                       fontSize: 12,
                       color: "var(--color-text-muted)",
                       marginBottom: 16,
-                      padding: "0 12px"
+                      padding: "0 12px",
                     }}
                   >
                     Give your fund a name and description.
                   </p>
-                  <div style={{ display: "grid", gap: 14 , padding:12}}>
+                  <div style={{ display: "grid", gap: 14, padding: 12 }}>
                     <Input
                       icon="🏷️"
                       label="Fund Name"
@@ -1521,7 +1531,7 @@ function CreateFund() {
                       display: "flex",
                       justifyContent: "flex-end",
                       marginTop: 16,
-                      padding: "0 12px 12px 0"
+                      padding: "0 12px 12px 0",
                     }}
                   >
                     <AnimatedButton
@@ -1529,7 +1539,6 @@ function CreateFund() {
                       size="md"
                       onClick={() => setStep(2)}
                       disabled={!ok1}
-                      
                     >
                       Next: Configuration →
                     </AnimatedButton>
@@ -1553,7 +1562,7 @@ function CreateFund() {
                       fontWeight: 700,
                       color: "var(--color-text)",
                       margin: "0 0 4px",
-                      padding: "12px"
+                      padding: "12px",
                     }}
                   >
                     Configuration
@@ -1563,7 +1572,7 @@ function CreateFund() {
                       fontSize: 12,
                       color: "var(--color-text-muted)",
                       marginBottom: 16,
-                      padding: "0 12px"
+                      padding: "0 12px",
                     }}
                   >
                     Set the fund parameters.
@@ -1582,7 +1591,6 @@ function CreateFund() {
                       boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
                     }}
                   >
-                    
                     <span
                       style={{
                         fontSize: 11,
@@ -1614,7 +1622,7 @@ function CreateFund() {
                       display: "grid",
                       gridTemplateColumns: "1fr 1fr",
                       gap: 14,
-                      padding: "0 12px"
+                      padding: "0 12px",
                     }}
                   >
                     <Input
@@ -1698,7 +1706,6 @@ function CreateFund() {
                       background:
                         "radial-gradient(circle, rgba(249,115,22,0.05), transparent)",
                       pointerEvents: "none",
-                     
                     }}
                   />
 
@@ -1717,7 +1724,7 @@ function CreateFund() {
                     style={{
                       fontSize: 12,
                       color: "var(--color-text-muted)",
-                      margin:"12px 12px 16px",
+                      margin: "12px 12px 16px",
                       position: "relative",
                     }}
                   >
@@ -1749,7 +1756,6 @@ function CreateFund() {
                           "radial-gradient(circle, rgba(249,115,22,0.06), transparent)",
                         pointerEvents: "none",
                         margin: 12,
-                        
                       }}
                     />
                     <span
@@ -1881,7 +1887,7 @@ function CreateFund() {
                       display: "flex",
                       justifyContent: "space-between",
                       position: "relative",
-                      padding: "12px"
+                      padding: "12px",
                     }}
                   >
                     <AnimatedButton

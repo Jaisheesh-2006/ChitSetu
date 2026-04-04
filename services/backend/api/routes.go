@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Jaisheesh-2006/ChitSetu/handlers"
@@ -36,7 +37,38 @@ func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authSer
 	profileRepo := users.NewRepository(store.Database)
 	profileHandler := users.NewHandler(profileRepo)
 	router.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend"})
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+		defer cancel()
+
+		dbState := "connected"
+		if err := store.Ping(ctx); err != nil {
+			dbState = "unreachable"
+		}
+
+		blockchainState := "not_configured"
+		if os.Getenv("WEB3_RPC_URL") != "" {
+			blockchainState = "configured"
+		}
+
+		version := os.Getenv("APP_VERSION")
+		if version == "" {
+			version = "dev"
+		}
+
+		statusCode := http.StatusOK
+		healthStatus := "ok"
+		if dbState != "connected" {
+			statusCode = http.StatusServiceUnavailable
+			healthStatus = "error"
+		}
+
+		c.JSON(statusCode, gin.H{
+			"status":     healthStatus,
+			"service":    "backend",
+			"db":         dbState,
+			"blockchain": blockchainState,
+			"version":    version,
+		})
 	})
 
 	router.GET("/health/db", func(c *gin.Context) {

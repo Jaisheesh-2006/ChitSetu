@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chitsetu-frontend
+  namespace: chitsetu-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chitsetu-frontend
+  template:
+    metadata:
+      labels:
+        app: chitsetu-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: DOCKERHUB_NAMESPACE/chitsetu-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: chitsetu-frontend-env
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chitsetu-frontend
+  namespace: chitsetu-prod
+spec:
+  selector:
+    app: chitsetu-frontend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: ClusterIP
