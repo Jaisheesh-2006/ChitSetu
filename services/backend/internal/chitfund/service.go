@@ -15,7 +15,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
-	"github.com/Jaisheesh-2006/Chitsetu/google/uuid"
+	"github.com/google/uuid"
 
 	"github.com/robfig/cron/v3"
 )

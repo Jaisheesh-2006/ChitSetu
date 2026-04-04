@@ -63,11 +63,12 @@ func NewServiceFromEnv() (*Service, error) {
 
 // Removed outdated Record wrappers
 func (s *Service) WaitForReceipt(ctx context.Context, txHash string) (*types.Receipt, error) {
-	if !common.IsHexHash(strings.TrimSpace(txHash)) {
+	trimmedHash := strings.TrimSpace(txHash)
+	if !strings.HasPrefix(trimmedHash, "0x") || len(trimmedHash) != 66 {
 		return nil, fmt.Errorf("invalid tx hash")
 	}
 
-	hash := common.HexToHash(strings.TrimSpace(txHash))
+	hash := common.HexToHash(trimmedHash)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
