@@ -32,6 +32,8 @@ function PaymentFlow() {
     const [keyId, setKeyId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [paymentFailed, setPaymentFailed] = useState(false);
+    const [paymentError, setPaymentError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
 
     useEffect(() => {
@@ -71,6 +73,19 @@ function PaymentFlow() {
         }
     }, [sessionId, isAuthenticated]);
 
+    const handlePaymentFailed = (errMsg: string) => {
+        setPaymentError(errMsg);
+        setPaymentFailed(true);
+    };
+
+    const handleRetryRedirect = () => {
+        if (session?.fund_id) {
+            router.push(`/fund/${session.fund_id}?payment_failed=1`);
+        } else {
+            router.push("/funds");
+        }
+    };
+
     const handlePaymentSuccess = async (data: {
         razorpay_payment_id: string;
         razorpay_order_id: string;
@@ -87,7 +102,7 @@ function PaymentFlow() {
             });
             setSuccess(true);
         } catch (err: unknown) {
-            setError(
+            handlePaymentFailed(
                 err instanceof Error
                     ? err.message
                     : "Payment verification failed on server."
@@ -97,7 +112,7 @@ function PaymentFlow() {
         }
     };
 
-    if (authLoading || (!error && loading && !session)) {
+    if (authLoading || (!error && !paymentFailed && loading && !session)) {
         return (
             <div className="flex min-h-[50vh] flex-col items-center justify-center">
                 <div
@@ -117,6 +132,188 @@ function PaymentFlow() {
                     Initializing secure payment...
                 </p>
             </div>
+        );
+    }
+
+    /* ── Payment Failed Popup Modal ── */
+    if (paymentFailed) {
+        return (
+            <>
+                {/* Backdrop */}
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    style={{
+                        position: "fixed",
+                        inset: 0,
+                        zIndex: 100,
+                        background: "rgba(0,0,0,0.65)",
+                        backdropFilter: "blur(8px)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                    }}
+                >
+                    {/* Modal card */}
+                    <motion.div
+                        initial={{ scale: 0.7, opacity: 0, y: 30 }}
+                        animate={{ scale: 1, opacity: 1, y: 0 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 22, delay: 0.1 }}
+                        style={{
+                            background: "var(--color-bg-card, #1a1a2e)",
+                            borderRadius: 16,
+                            padding: "36px 32px 28px",
+                            maxWidth: 400,
+                            width: "90%",
+                            boxShadow: "0 24px 80px rgba(239,68,68,0.15), 0 0 0 1px rgba(239,68,68,0.12)",
+                            border: "1px solid rgba(239,68,68,0.15)",
+                            textAlign: "center",
+                            position: "relative",
+                            overflow: "hidden",
+                        }}
+                    >
+                        {/* Ambient glow behind icon */}
+                        <div
+                            style={{
+                                position: "absolute",
+                                top: -30,
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                width: 200,
+                                height: 200,
+                                borderRadius: "50%",
+                                background: "radial-gradient(circle, rgba(239,68,68,0.12), transparent 70%)",
+                                pointerEvents: "none",
+                            }}
+                        />
+
+                        {/* Animated X icon */}
+                        <motion.div
+                            initial={{ scale: 0, rotate: -180 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.25 }}
+                            style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: "50%",
+                                background: "rgba(239,68,68,0.1)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                margin: "0 auto 20px",
+                                boxShadow: "0 0 30px rgba(239,68,68,0.2)",
+                                position: "relative",
+                            }}
+                        >
+                            <motion.div
+                                animate={{ boxShadow: ["0 0 0px rgba(239,68,68,0.3)", "0 0 20px rgba(239,68,68,0.15)", "0 0 0px rgba(239,68,68,0.3)"] }}
+                                transition={{ repeat: Infinity, duration: 2 }}
+                                style={{
+                                    width: 72,
+                                    height: 72,
+                                    borderRadius: "50%",
+                                    position: "absolute",
+                                    inset: 0,
+                                }}
+                            />
+                            <svg
+                                width="32"
+                                height="32"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="#ef4444"
+                                strokeWidth={3}
+                            >
+                                <motion.path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M6 18L18 6M6 6l12 12"
+                                    initial={{ pathLength: 0 }}
+                                    animate={{ pathLength: 1 }}
+                                    transition={{ duration: 0.5, delay: 0.4 }}
+                                />
+                            </svg>
+                        </motion.div>
+
+                        {/* Title */}
+                        <motion.h2
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.35 }}
+                            style={{
+                                fontSize: 22,
+                                fontWeight: 800,
+                                color: "#f87171",
+                                marginBottom: 8,
+                                letterSpacing: "-0.01em",
+                            }}
+                        >
+                            Payment Failed
+                        </motion.h2>
+
+                        {/* Description */}
+                        <motion.p
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.45 }}
+                            style={{
+                                fontSize: 13,
+                                color: "var(--color-text-muted)",
+                                lineHeight: 1.6,
+                                marginBottom: 8,
+                            }}
+                        >
+                            Your payment could not be processed.
+                        </motion.p>
+
+                        {paymentError && (
+                            <motion.p
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.55 }}
+                                style={{
+                                    fontSize: 11,
+                                    color: "rgba(248,113,113,0.7)",
+                                    background: "rgba(239,68,68,0.06)",
+                                    borderRadius: 6,
+                                    padding: "8px 12px",
+                                    marginBottom: 20,
+                                    fontFamily: "monospace",
+                                }}
+                            >
+                                {paymentError}
+                            </motion.p>
+                        )}
+
+                        {!paymentError && <div style={{ height: 12 }} />}
+
+                        {/* Buttons */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.55 }}
+                            style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                        >
+                            <AnimatedButton
+                                variant="primary"
+                                size="lg"
+                                fullWidth
+                                onClick={handleRetryRedirect}
+                            >
+                                🔄 Retry Payment
+                            </AnimatedButton>
+                            <AnimatedButton
+                                variant="ghost"
+                                size="sm"
+                                fullWidth
+                                onClick={() => router.push("/dashboard")}
+                            >
+                                Return to Dashboard
+                            </AnimatedButton>
+                        </motion.div>
+                    </motion.div>
+                </motion.div>
+            </>
         );
     }
 
