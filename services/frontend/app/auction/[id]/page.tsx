@@ -19,6 +19,14 @@ function fmt(n: number) {
 
 const IDLE_WINDOW = 20; // seconds
 const INCREMENTS = [10, 100, 200];
+const MIN_INCREMENT = Math.min(...INCREMENTS);
+
+function noFurtherBidsPossible(currentPrice: number, monthlyContribution: number, activeMembers: number) {
+    if (monthlyContribution <= 0 || activeMembers <= 0) return false;
+    const maxAllowedDiscount = monthlyContribution * activeMembers * 0.5;
+    const remaining = maxAllowedDiscount - currentPrice;
+    return remaining <= 1e-9 || remaining + 1e-9 < MIN_INCREMENT;
+}
 
 export default function AuctionRoomPage() {
     const params = useParams();
@@ -47,6 +55,7 @@ export default function AuctionRoomPage() {
 
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastBidTimeRef = useRef<number>(Date.now());
+    const membersRef = useRef<FundMember[]>([]);
 
     // ── WebSocket ──
     const { lastMessage, isConnected, sendMessage } = useAuctionSocket(id);
@@ -55,6 +64,10 @@ export default function AuctionRoomPage() {
         if (!isConnected) return;
         sendMessage({ type: "auction_room_join" });
     }, [isConnected, sendMessage]);
+
+    useEffect(() => {
+        membersRef.current = members;
+    }, [members]);
 
     // ── Initial load ──
     useEffect(() => {
@@ -76,7 +89,18 @@ export default function AuctionRoomPage() {
                     setCurrentPrice(snap.session.current_price);
                     setCurrentLeaderUserId(snap.session.last_bid_user_id || null);
                     setWaitingForParticipants(false);
-                    if (snap.live_countdown_seconds !== undefined && snap.live_countdown_seconds !== null) {
+                    const activeMembers = Array.isArray(membersResult)
+                        ? (membersResult.filter((m) => m.status === "active").length || f.max_members || 0)
+                        : (f.max_members || 0);
+                    const shouldCloseImmediately = noFurtherBidsPossible(
+                        snap.session.current_price,
+                        f.monthly_contribution || 0,
+                        activeMembers,
+                    );
+                    if (shouldCloseImmediately) {
+                        setCountdown(0);
+                        lastBidTimeRef.current = Date.now() - (IDLE_WINDOW * 1000);
+                    } else if (snap.live_countdown_seconds !== undefined && snap.live_countdown_seconds !== null) {
                         setCountdown(Math.max(0, snap.live_countdown_seconds));
                         lastBidTimeRef.current = Date.now() - ((IDLE_WINDOW - snap.live_countdown_seconds) * 1000);
                     }
@@ -130,20 +154,32 @@ export default function AuctionRoomPage() {
                 break;
 
             case "new_bid": {
+                const nextPrice = lastMessage.new_price || 0;
                 const newBid: AuctionBid = {
                     _id: `ws-${Date.now()}`,
                     fund_id: lastMessage.fund_id,
                     cycle_number: lastMessage.cycle_number || 0,
                     user_id: lastMessage.user_id || "",
                     increment: lastMessage.increment || 0,
-                    resulting_price: lastMessage.new_price || 0,
+                    resulting_price: nextPrice,
                     created_at: lastMessage.timestamp || new Date().toISOString(),
                 };
                 setBids(prev => [newBid, ...prev].slice(0, 50));
-                setCurrentPrice(lastMessage.new_price || 0);
+                setCurrentPrice(nextPrice);
                 setCurrentLeaderUserId(lastMessage.best_bid_user_id ?? null);
-                setCountdown(IDLE_WINDOW);
-                lastBidTimeRef.current = Date.now();
+                const activeMembers = membersRef.current.filter((m) => m.status === "active").length || (fund?.max_members || 0);
+                const shouldCloseImmediately = noFurtherBidsPossible(
+                    nextPrice,
+                    fund?.monthly_contribution || 0,
+                    activeMembers,
+                );
+                if (shouldCloseImmediately) {
+                    setCountdown(0);
+                    lastBidTimeRef.current = Date.now() - (IDLE_WINDOW * 1000);
+                } else {
+                    setCountdown(IDLE_WINDOW);
+                    lastBidTimeRef.current = Date.now();
+                }
                 break;
             }
 
@@ -162,8 +198,17 @@ export default function AuctionRoomPage() {
     useEffect(() => {
         if (!id || auctionStatus !== "ended") return;
 
-        void getAuction(id)
-            .then((snap) => {
+        void Promise.allSettled([getAuction(id), getFundMembers(id)])
+            .then(([snapResult, membersResult]) => {
+                if (membersResult.status === "fulfilled" && Array.isArray(membersResult.value)) {
+                    setMembers(membersResult.value);
+                }
+
+                if (snapResult.status !== "fulfilled") {
+                    return;
+                }
+
+                const snap = snapResult.value;
                 setSnapshot(snap);
                 setBids(snap.bids || []);
                 if (snap.result) {
@@ -241,16 +286,42 @@ export default function AuctionRoomPage() {
         </div>
     );
 
-    const totalPool = (fund?.monthly_contribution || 0) * (fund?.max_members || 0);
+    const activeParticipantTarget = members.filter((m) => m.status === "active").length || (fund?.max_members || 0);
+    const totalPool = (fund?.monthly_contribution || 0) * activeParticipantTarget;
     const maxAllowedDiscount = totalPool * 0.5;
     const remainingDiscountCapacity = Math.max(0, maxAllowedDiscount - currentPrice);
-    const bidLimitReached = remainingDiscountCapacity <= 0;
+    const bidLimitReached = remainingDiscountCapacity + 1e-9 < MIN_INCREMENT;
     const sameUserAsLeader = currentLeaderUserId === currentUserId;
     const bidLocked = bidLoading || isSpectator || sameUserAsLeader || auctionStatus !== "live" || waitingForParticipants;
     const payoutRemaining = totalPool - currentPrice;
     const countdownPct = (countdown / IDLE_WINDOW) * 100;
     const countdownColor = countdown > 10 ? "#22c55e" : countdown > 5 ? "#f59e0b" : "#ef4444";
-    const activeParticipantTarget = members.filter((m) => m.status === "active").length || (fund?.max_members || 0);
+    const memberNameByUserId = new Map<string, string>();
+    const isUsefulName = (name: string | undefined | null) => {
+        const normalized = (name || "").trim();
+        if (!normalized) return false;
+        return normalized.toLowerCase() !== "member";
+    };
+    snapshot?.members_info?.forEach((member) => {
+        if (member.user_id && isUsefulName(member.full_name)) {
+            memberNameByUserId.set(member.user_id, member.full_name.trim());
+        }
+    });
+    members.forEach((member) => {
+        if (!member.user_id || !isUsefulName(member.full_name)) {
+            return;
+        }
+        const existing = memberNameByUserId.get(member.user_id);
+        if (!existing || !isUsefulName(existing)) {
+            memberNameByUserId.set(member.user_id, member.full_name.trim());
+        }
+    });
+    const getMemberName = (userId: string) => {
+        const resolved = memberNameByUserId.get(userId);
+        if (resolved) return resolved;
+        if (userId) return userId.slice(0, 10);
+        return "Member";
+    };
     const memberCountForDividend = snapshot?.members_info?.length || activeParticipantTarget;
     const fallbackDividend = memberCountForDividend > 1 ? currentPrice / (memberCountForDividend - 1) : 0;
     const rawMemberDividendRows = winnerInfo
@@ -260,13 +331,14 @@ export default function AuctionRoomPage() {
             .filter((m) => m.user_id !== winnerInfo.userId)
             .map((m) => ({
                 userId: m.user_id,
-                fullName: m.full_name || members.find((x) => x.user_id === m.user_id)?.full_name || "Member",
+                fullName: getMemberName(m.user_id),
                 dividend: "dividend" in m && typeof m.dividend === "number" ? m.dividend : fallbackDividend,
             }))
         : [];
     const memberDividendRows = Array.from(
         new Map(rawMemberDividendRows.map((row) => [`${row.userId || row.fullName}`, row])).values()
     );
+    const winnerDisplayName = winnerInfo ? getMemberName(winnerInfo.userId) : "Member";
 
     return (
         <div style={{ background: "var(--color-bg)", minHeight: "100vh", color: "var(--color-text)" }}>
@@ -455,7 +527,7 @@ export default function AuctionRoomPage() {
                                                 <tbody>
                                                     {bids.map((b, i) => (
                                                         <tr key={b._id} style={{ borderBottom: "1px solid rgba(255,255,255,0.02)", background: i === 0 ? "rgba(249,115,22,0.05)" : "transparent" }}>
-                                                            <td style={{ padding: "12px 20px", fontWeight: 700 }}>{members.find(m => m.user_id === b.user_id)?.full_name || b.user_id.substring(0, 8)}</td>
+                                                            <td style={{ padding: "12px 20px", fontWeight: 700 }}>{getMemberName(b.user_id)}</td>
                                                             <td style={{ padding: "12px 20px", color: "var(--color-accent)", fontWeight: 800 }}>+{fmt(b.increment)}</td>
                                                             <td style={{ padding: "12px 20px", textAlign: "right", opacity: 0.5 }}>{new Date(b.created_at).toLocaleTimeString()}</td>
                                                         </tr>
@@ -500,7 +572,7 @@ export default function AuctionRoomPage() {
                             <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Auction Complete!</h2>
                             <div style={{ background: "var(--color-bg-subtle)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
                                 <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 4 }}>WINNER</p>
-                                <p style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>{members.find(m => m.user_id === winnerInfo.userId)?.full_name || "Member"}</p>
+                                <p style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>{winnerDisplayName}</p>
                                 <div style={{ height: 1, background: "rgba(255,255,255,0.05)", marginBottom: 16 }} />
                                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                                     <div>

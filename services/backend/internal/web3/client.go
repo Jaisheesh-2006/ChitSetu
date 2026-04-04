@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum"
@@ -25,6 +26,12 @@ type Client struct {
 	lastNonce  uint64
 	nonceInit  bool
 }
+
+const (
+	baseGasBufferBps    = int64(120) // +20%
+	maxTxSendAttempts   = 4
+	retryGasBumpStepBps = int64(25) // +25% per retry attempt
+)
 
 func NewClient(rpcURL string, privateKey string) (*Client, error) {
 	if rpcURL == "" {
@@ -100,16 +107,20 @@ func (c *Client) prepareTransactOptsWithKeyLocked(ctx context.Context, privKey *
 	isManager := addr.Hex() == c.from
 
 	if isManager {
+		networkNonce, err := c.EthClient.PendingNonceAt(ctx, addr)
+		if err != nil {
+			return nil, fmt.Errorf("read pending nonce: %w", err)
+		}
+
 		if !c.nonceInit {
-			nonce, err = c.EthClient.PendingNonceAt(ctx, addr)
-			if err != nil {
-				return nil, fmt.Errorf("read pending nonce: %w", err)
-			}
-			c.lastNonce = nonce
-			c.nonceInit = true
+			nonce = networkNonce
 		} else {
-			c.lastNonce++
-			nonce = c.lastNonce
+			localNext := c.lastNonce + 1
+			if networkNonce > localNext {
+				nonce = networkNonce
+			} else {
+				nonce = localNext
+			}
 		}
 	} else {
 		// For others (users), just use network pending nonce
@@ -124,8 +135,8 @@ func (c *Client) prepareTransactOptsWithKeyLocked(ctx context.Context, privKey *
 		return nil, fmt.Errorf("suggest gas price: %w", err)
 	}
 
-	// 20% Gas Price buffer for higher transaction reliability
-	gasPriceWithBuffer := new(big.Int).Mul(gasPrice, big.NewInt(120))
+	// 20% Gas Price buffer for higher transaction reliability.
+	gasPriceWithBuffer := new(big.Int).Mul(gasPrice, big.NewInt(baseGasBufferBps))
 	gasPriceWithBuffer.Div(gasPriceWithBuffer, big.NewInt(100))
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privKey, c.ChainID)
@@ -139,6 +150,52 @@ func (c *Client) prepareTransactOptsWithKeyLocked(ctx context.Context, privKey *
 	auth.GasPrice = gasPriceWithBuffer
 
 	return auth, nil
+}
+
+func applyRetryGasBump(opts *bind.TransactOpts, attempt int) {
+	if attempt <= 0 {
+		return
+	}
+
+	bumpBps := int64(100) + int64(attempt)*retryGasBumpStepBps
+	if bumpBps <= 100 {
+		return
+	}
+
+	if opts.GasPrice != nil {
+		bumped := new(big.Int).Mul(opts.GasPrice, big.NewInt(bumpBps))
+		bumped.Div(bumped, big.NewInt(100))
+		opts.GasPrice = bumped
+	}
+	if opts.GasTipCap != nil {
+		bumpedTip := new(big.Int).Mul(opts.GasTipCap, big.NewInt(bumpBps))
+		bumpedTip.Div(bumpedTip, big.NewInt(100))
+		opts.GasTipCap = bumpedTip
+	}
+	if opts.GasFeeCap != nil {
+		bumpedFee := new(big.Int).Mul(opts.GasFeeCap, big.NewInt(bumpBps))
+		bumpedFee.Div(bumpedFee, big.NewInt(100))
+		opts.GasFeeCap = bumpedFee
+	}
+}
+
+func isRetryableSendError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "replacement transaction underpriced") ||
+		strings.Contains(msg, "nonce too low") ||
+		strings.Contains(msg, "already known") ||
+		strings.Contains(msg, "known transaction") ||
+		strings.Contains(msg, "temporarily unavailable")
+}
+
+func isReplacementUnderpriced(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "replacement transaction underpriced")
 }
 
 // SimulateCall attempts to run the transaction locally to see if it reverts.
@@ -156,25 +213,46 @@ func (c *Client) SendTransaction(ctx context.Context, txFunc func(opts *bind.Tra
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	opts, err := c.prepareTransactOptsWithKeyLocked(ctx, c.privateKey)
-	if err != nil {
-		return nil, err
-	}
+	var forcedNonce *uint64
+	for attempt := 0; attempt < maxTxSendAttempts; attempt++ {
+		opts, err := c.prepareTransactOptsWithKeyLocked(ctx, c.privateKey)
+		if err != nil {
+			return nil, err
+		}
 
-	tx, err := txFunc(opts)
-	if err != nil {
-		// If transaction submission fails (e.g. invalid gas, underpriced),
-		// we should reset the nonceInit to re-sync with network on next try.
+		if forcedNonce != nil {
+			opts.Nonce = big.NewInt(int64(*forcedNonce))
+		}
+		applyRetryGasBump(opts, attempt)
+
+		tx, err := txFunc(opts)
+		if err == nil {
+			// Mark manager nonce as committed after successful submission.
+			if addr := crypto.PubkeyToAddress(c.privateKey.PublicKey); addr.Hex() == c.from {
+				c.lastNonce = tx.Nonce()
+				c.nonceInit = true
+				fmt.Printf("TX SUBMITTED [manager]: hash=%s nonce=%d\n", tx.Hash().Hex(), tx.Nonce())
+			}
+			return tx, nil
+		}
+
+		if !isRetryableSendError(err) || attempt == maxTxSendAttempts-1 {
+			c.nonceInit = false
+			return nil, err
+		}
+
+		if isReplacementUnderpriced(err) && opts.Nonce != nil {
+			n := opts.Nonce.Uint64()
+			forcedNonce = &n
+		} else {
+			forcedNonce = nil
+		}
+
+		// Re-sync with network nonce source before retry.
 		c.nonceInit = false
-		return nil, err
 	}
 
-	// Double-check nonce sync if it's the manager
-	if addr := crypto.PubkeyToAddress(c.privateKey.PublicKey); addr.Hex() == c.from {
-		fmt.Printf("TX SUBMITTED [manager]: hash=%s nonce=%d\n", tx.Hash().Hex(), tx.Nonce())
-	}
-
-	return tx, nil
+	return nil, fmt.Errorf("transaction submission failed after retries")
 }
 
 func trimHexPrefix(value string) string {
@@ -208,6 +286,11 @@ func (c *Client) SendBaseToken(ctx context.Context, to string, amountWei *big.In
 	if err != nil {
 		c.nonceInit = false // Desync nonce on failure
 		return nil, fmt.Errorf("send base token tx: %w", err)
+	}
+
+	if addr := crypto.PubkeyToAddress(c.privateKey.PublicKey); addr.Hex() == c.from {
+		c.lastNonce = signedTx.Nonce()
+		c.nonceInit = true
 	}
 
 	return signedTx, nil

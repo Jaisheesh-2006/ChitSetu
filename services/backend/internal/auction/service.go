@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -21,6 +22,7 @@ import (
 const (
 	schedulerInterval = time.Second
 	idleWindow        = 20 * time.Second
+	minBidIncrement   = 10.0
 )
 
 type Service struct {
@@ -216,7 +218,55 @@ func (s *Service) PlaceBid(ctx context.Context, input PlaceBidInput) (*Bid, *Auc
 		"timestamp":        bid.CreatedAt,
 	})
 
+	// Close the auction immediately when no legal next bid exists.
+	go func(fundID string, cycleNumber int, currentPrice float64) {
+		checkCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		shouldFinalize, err := s.shouldFinalizeImmediately(checkCtx, fundID, currentPrice)
+		if err != nil {
+			log.Printf("auction immediate-finalize check failed for fund %s: %v", fundID, err)
+			return
+		}
+		if !shouldFinalize {
+			return
+		}
+
+		if _, _, err := s.FinalizeAuction(checkCtx, fundID, cycleNumber); err != nil && !errors.Is(err, ErrAuctionNotFinalized) {
+			log.Printf("auction immediate finalization failed for fund %s cycle %d: %v", fundID, cycleNumber, err)
+		}
+	}(input.FundID, updatedSession.CycleNumber, updatedSession.CurrentPrice)
+
 	return bid, updatedSession, nil
+}
+
+func (s *Service) shouldFinalizeImmediately(ctx context.Context, fundID string, currentPrice float64) (bool, error) {
+	fund, err := s.repo.GetFundByID(ctx, fundID)
+	if err != nil {
+		return false, fmt.Errorf("load fund for immediate-finalize check: %w", err)
+	}
+	if fund == nil {
+		return false, nil
+	}
+
+	activeMembers, err := s.repo.CountActiveMembers(ctx, fundID)
+	if err != nil {
+		return false, fmt.Errorf("count active members for immediate-finalize check: %w", err)
+	}
+	if activeMembers <= 0 || fund.MonthlyContribution <= 0 {
+		return false, nil
+	}
+
+	maxAllowedDiscount := float64(activeMembers) * fund.MonthlyContribution * 0.5
+	remaining := maxAllowedDiscount - currentPrice
+	if remaining <= 1e-9 {
+		return true, nil
+	}
+	if remaining+1e-9 < minBidIncrement {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (s *Service) GetAuction(ctx context.Context, fundID, userID string) (*AuctionSnapshot, error) {
@@ -403,15 +453,31 @@ func (s *Service) settleAuctionWalletBalances(fundID string, cycleNumber int, re
 		return
 	}
 
+	memberProfiles, err := s.repo.GetMembersProfileInfo(ctx, fundID)
+	if err != nil {
+		log.Printf("settle wallet balances fund=%s cycle=%d: failed to enrich member names: %v", fundID, cycleNumber, err)
+	}
+	nameByUserID := make(map[string]string, len(memberProfiles))
+	for _, profile := range memberProfiles {
+		if strings.TrimSpace(profile.FullName) != "" {
+			nameByUserID[profile.UserID] = strings.TrimSpace(profile.FullName)
+		}
+	}
+	winnerName := nameByUserID[result.WinnerUserID]
+	if winnerName == "" {
+		winnerName = result.WinnerUserID
+	}
+
 	// Step 1: Credit winner payout
-	log.Printf("settle wallet balances: crediting winner %s with %.2f tokens", result.WinnerUserID, result.PayoutAmount)
+	log.Printf("settle wallet balances: crediting winner %s (%s) with %.2f tokens", winnerName, result.WinnerUserID, result.PayoutAmount)
 	if err := s.walletService.CreditToBalance(ctx, result.WinnerUserID, result.PayoutAmount, "auction_winner_payout"); err != nil {
 		log.Printf("settle wallet balances: failed to credit winner: %v", err)
 	}
 
 	// Step 2: Calculate and credit dividends to non-winners
 	if len(members) > 1 {
-		discountAmount := (float64(fund.MaxMembers) * fund.MonthlyContribution) - result.PayoutAmount
+		totalPool := float64(len(members)) * fund.MonthlyContribution
+		discountAmount := totalPool - result.PayoutAmount
 		if discountAmount > 0 {
 			numNonWinners := len(members) - 1
 			dividendPerMember := discountAmount / float64(numNonWinners)
@@ -423,7 +489,11 @@ func (s *Service) settleAuctionWalletBalances(fundID string, cycleNumber int, re
 					if err := s.walletService.CreditToBalance(ctx, member.UserID, dividendPerMember, "auction_dividend"); err != nil {
 						log.Printf("settle wallet balances: failed to credit dividend to %s: %v", member.UserID, err)
 					} else {
-						log.Printf("settle wallet balances: credited dividend %.2f to member %s", dividendPerMember, member.UserID)
+						memberName := nameByUserID[member.UserID]
+						if memberName == "" {
+							memberName = member.UserID
+						}
+						log.Printf("settle wallet balances: credited dividend %.2f to member %s (%s)", dividendPerMember, memberName, member.UserID)
 					}
 				}
 			}

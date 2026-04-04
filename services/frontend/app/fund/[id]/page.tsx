@@ -195,10 +195,12 @@ export default function FundDetailPage() {
     })();
   }, [id]);
 
-  // ── Polling: re-fetch members + contributions every 10s ──
+  // ── Auto refresh: keep members/contributions/auction state warm without manual reload ──
   useEffect(() => {
     if (!id || !currentUserId) return;
-    const interval = setInterval(async () => {
+
+    let disposed = false;
+    const refresh = async () => {
       try {
         const [membersResult, c, a] = await Promise.allSettled([
           getFundMembers(id),
@@ -209,28 +211,56 @@ export default function FundDetailPage() {
           membersResult.status === "fulfilled" &&
           Array.isArray(membersResult.value)
         ) {
-          setMembers(membersResult.value);
+          if (!disposed) {
+            setMembers(membersResult.value);
+          }
           // If the current user is now an active member, clear the apply result
           const userIsNowActive = membersResult.value.some(
             (m) => m.user_id === currentUserId && m.status === "active",
           );
-          if (userIsNowActive) {
+          if (userIsNowActive && !disposed) {
             setApplyResult(null);
           }
         }
-        if (id) {
-          const statusResult = await getFundApplicationStatus(id).catch(() => ({
-            status: "none" as const,
-          }));
+
+        const statusResult = await getFundApplicationStatus(id).catch(() => ({
+          status: "none" as const,
+        }));
+        if (!disposed) {
           setApplicationStatus(statusResult.status);
         }
-        if (c.status === "fulfilled") setContribData(c.value);
-        if (a.status === "fulfilled") setAuctionSnap(a.value);
+
+        if (c.status === "fulfilled" && !disposed) setContribData(c.value);
+        if (a.status === "fulfilled" && !disposed) setAuctionSnap(a.value);
       } catch {
-        /* ignore polling errors */
+        /* ignore transient refresh errors */
       }
-    }, 10000);
-    return () => clearInterval(interval);
+    };
+
+    void refresh();
+
+    const interval = setInterval(() => {
+      void refresh();
+    }, 3000);
+
+    const onFocus = () => {
+      void refresh();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [id, currentUserId]);
 
   useEffect(() => {
@@ -419,16 +449,22 @@ export default function FundDetailPage() {
       </div>
     );
 
-  const status = fund ? derivedStatus(fund) : "open";
+  const activeMemberCount =
+    members.filter((m) => m.status === "active").length ||
+    (fund?.current_member_count ?? 0);
+  const status = fund
+    ? derivedStatus({ ...fund, current_member_count: activeMemberCount })
+    : "open";
   const st = statusStyle(status);
   const auctionIsWaiting = auctionSnap?.session?.status === "waiting";
   const auctionIsLive = auctionSnap?.session?.status === "live";
   const auctionRoomOpen = auctionIsWaiting || auctionIsLive;
   const auctionHasResult = !!auctionSnap?.result;
+  const isFundFull = activeMemberCount >= (fund?.max_members ?? 0);
   const allContributionsPaid =
     !!contribData &&
-    contribData.contributions.length > 0 &&
-    contribData.contributions.every((c) => c.status === "paid");
+    contribData.current_member_count > 0 &&
+    contribData.total_due_amount <= 0.000001;
 
   return (
     <div
@@ -644,7 +680,7 @@ export default function FundDetailPage() {
               />
               <StatCard
                 label="Members"
-                value={`${fund?.current_member_count || 0}/${fund?.max_members || 0}`}
+                value={`${activeMemberCount || 0}/${fund?.max_members || 0}`}
                 delay={0.2}
                 icon={<span>👥</span>}
                 accent="#2dd4bf"
@@ -1227,7 +1263,7 @@ export default function FundDetailPage() {
                     { k: "Monthly", v: fmt(fund?.monthly_contribution || 0) },
                     {
                       k: "Members",
-                      v: `${fund?.current_member_count || 0} / ${fund?.max_members || 0}`,
+                      v: `${activeMemberCount || 0} / ${fund?.max_members || 0}`,
                     },
                     {
                       k: "Duration",
@@ -1273,8 +1309,7 @@ export default function FundDetailPage() {
                 {/* Apply to join — hide when full or user is the creator */}
                 {fund?.status === "open" &&
                   !isCreator &&
-                  (fund?.current_member_count ?? 0) <
-                    (fund?.max_members ?? 0) && (
+                  !isFundFull && (
                     <div style={{ marginBottom: 14 }}>
                       <h3
                         style={{
@@ -1301,8 +1336,7 @@ export default function FundDetailPage() {
 
                 {fund?.status === "open" &&
                   !isCreator &&
-                  (fund?.current_member_count ?? 0) <
-                    (fund?.max_members ?? 0) &&
+                  !isFundFull &&
                   applicationStatus === "none" && (
                     <AnimatedButton
                       onClick={handleApply}
@@ -1569,11 +1603,13 @@ export default function FundDetailPage() {
                         margin: "4px 0 0",
                       }}
                     >
-                      {members.find(
+                      {auctionSnap.members_info?.find(
                         (m) => m.user_id === auctionSnap.result?.winner_user_id,
                       )?.full_name ||
-                        auctionSnap.result?.winner_user_id?.substring(0, 16) +
-                          "\u2026"}
+                        members.find(
+                          (m) => m.user_id === auctionSnap.result?.winner_user_id,
+                        )?.full_name ||
+                        "Winner"}
                     </p>
                     <p
                       style={{
@@ -1594,8 +1630,7 @@ export default function FundDetailPage() {
                 >
                   {/* Organizer: start auction — shown when creator + fund is full + no live auction */}
                   {isCreator &&
-                    (fund?.current_member_count ?? 0) >=
-                      (fund?.max_members ?? 1) &&
+                    isFundFull &&
                     !auctionRoomOpen &&
                     !auctionHasResult && (
                       <>
