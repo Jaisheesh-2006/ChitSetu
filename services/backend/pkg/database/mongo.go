@@ -82,6 +82,26 @@ func (s *Store) EnsureIndexes(ctx context.Context) error {
 		"user_profiles": {
 			{Keys: bson.D{{Key: "user_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_user_profiles_user_id")},
 		},
+		"application_results": {
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "fund_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_application_results_user_fund").SetPartialFilterExpression(bson.M{"fund_id": bson.M{"$type": "string"}})},
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("idx_application_results_user_created")},
+		},
+		"funds": {
+			{Keys: bson.D{{Key: "status", Value: 1}}, Options: options.Index().SetName("idx_funds_status")},
+			{Keys: bson.D{{Key: "creator_id", Value: 1}}, Options: options.Index().SetName("idx_funds_creator_id")},
+		},
+		"fund_members": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "user_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_fund_members_fund_user")},
+			{Keys: bson.D{{Key: "fund_id", Value: 1}}, Options: options.Index().SetName("idx_fund_members_fund_id")},
+			{Keys: bson.D{{Key: "user_id", Value: 1}}, Options: options.Index().SetName("idx_fund_members_user_id")},
+		},
+		"contributions": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "user_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_contributions_fund_user_cycle_number")},
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "user_id", Value: 1}}, Options: options.Index().SetName("idx_contributions_fund_user")},
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetName("idx_contributions_fund_cycle_number")},
+			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "status", Value: 1}}, Options: options.Index().SetName("idx_contributions_user_status")},
+			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "due_date", Value: 1}}, Options: options.Index().SetName("idx_contributions_status_due")},
+		},
 	}
 
 	for collectionName, indexes := range indexSets {

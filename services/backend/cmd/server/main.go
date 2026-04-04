@@ -12,6 +12,7 @@ import (
 
 	"github.com/Jaisheesh-2006/ChitSetu/api"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
@@ -41,8 +42,11 @@ func main() {
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
 	authService := auth.NewService(store.Database)
+	chitfundRepo := chitfund.NewRepository(store.Database)
+	chitfundService := chitfund.NewService(chitfundRepo)
+	chitfundHandler := chitfund.NewHandler(chitfundService)
 	// Setup router.
-	router := api.SetupRouter(store,authService)
+	router := api.SetupRouter(store, authService, chitfundHandler)
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
