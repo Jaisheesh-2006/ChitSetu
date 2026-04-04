@@ -54,6 +54,7 @@ func main() {
 
 	wsManager := ws.NewManager()
 	auctionRepo := auction.NewRepository(store.Database)
+	chitfundRepo := chitfupaymentnd.NewRepository(store.Database)
 
 	// Broadcast participant count only for explicit auction-room joins/leaves.
 	wsManager.OnAuctionParticipantChange = func(fundID string, count int) {
