@@ -16,14 +16,16 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chat"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/payments"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
-
-func main() {
-	// Load environment variables
+unc main() {
 	loadEnv()
+	// validateRequiredAuthEnv()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -41,21 +43,49 @@ func main() {
 
 	log.Println("backend startup: mongodb connected")
 	indexCtx, cancelIndexes := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancelIndexes()
+
 	if err := store.EnsureIndexes(indexCtx); err != nil {
+		cancelIndexes()
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
-	authService := auth.NewService(store.Database)
+	cancelIndexes()
+	
+	// 1. Core Services
+	walletRepo := wallet.NewRepository(store.Database)
+	walletService := wallet.NewService(walletRepo)
+	authService := auth.NewService(store.Database, walletService)
+
+	// 2. Web3 Stack
+	var contractService *web3.ContractService
+
+	web3Client, err := web3.NewClient(os.Getenv("WEB3_RPC_URL"), os.Getenv("WEB3_PRIVATE_KEY"))
+	if err != nil {
+		log.Printf("Web3 disabled: %v", err)
+	} else {
+		contractService, err = web3.NewContractService(web3Client)
+		if err != nil {
+			log.Printf("Web3 smart contracts disabled: %v", err)
+		} else {
+			// One-time max allowance on the specific factory/child if needed.
+			// The backend now handles this per-fund anyway, but keeping for compatibility.
+			chitFundAddr := os.Getenv("CHIT_CONTRACT_ADDRESS")
+			if chitFundAddr != "" {
+				contractService.ApproveInfinite(chitFundAddr)
+			}
+		}
+	}
+
 	// 3. Application Services
-	paymentRepo := payments.NewRepository(store.Database)
-	paymentService := payments.NewService(paymentRepo)
+	Repo := payments.NewRepository(store.Database)
+	paymentService := payments.NewService(paymentRepo, contractService, walletService)
 	paymentHandler := payments.NewHandler(paymentService)
 	paymentCron := paymentService.StartDailyReminderCron()
 	defer paymentCron.Stop()
 
 	wsManager := ws.NewManager()
 	auctionRepo := auction.NewRepository(store.Database)
-	chitfundRepo := chitfund.NewRepository(store.Database)
+	chitfundRepo := chitfupaymentnd.NewRepository(store.Database)
+	chatRepo := chat.NewRepository(store.Database)
 
 	// Broadcast participant count only for explicit auction-room joins/leaves.
 	wsManager.OnAuctionParticipantChange = func(fundID string, count int) {
@@ -65,23 +95,32 @@ func main() {
 		})
 	}
 
-	auctionService := auction.NewService(auctionRepo, wsManager)
+	web3Handlers := api.NewWeb3Handlers(walletService, contractService, chitfundRepo)
+
+	auctionService := auction.NewService(auctionRepo, wsManager, contractService, walletService)
 	auctionHandler := auction.NewHandler(auctionService, wsManager)
 
 	auctionSchedulerCtx, stopAuctionScheduler := context.WithCancel(context.Background())
 	defer stopAuctionScheduler()
 	auctionService.StartScheduler(auctionSchedulerCtx)
 
-	chitfundService := chitfund.NewService(chitfundRepo)
-	fundCleanupCron := chitfundService.StartDailyUnderfilledFundCleanupCron()
-	defer fundCleanupCron.Stop()
-
+	chitfundService := chitfund.NewService(chitfundRepo, contractService, walletService, wsManager)
 	chitfundHandler := chitfund.NewHandler(chitfundService)
 
-	chatRepo := chat.NewRepository(store.Database)
 	chatHandler := chat.NewHandler(chatRepo, wsManager)
-	// Setup router.
-	router := api.SetupRouter(store, auctionHandler, authService, chitfundHandler, paymentHandler, chatHandler)
+
+	// 4. Setup Router
+	router := api.SetupRouter(
+		store,
+		paymentHandler,
+		auctionHandler,
+		chitfundHandler,
+		chatHandler,
+		authService,
+		walletService,
+		web3Handlers,
+	)
+
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
@@ -113,7 +152,6 @@ func main() {
 	}
 
 	log.Println("backend shutdown complete")
-
 }
 
 func getenvOrDefault(key, defaultValue string) string {
@@ -128,11 +166,30 @@ func loadEnv() {
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
 			if err := godotenv.Load(p); err == nil {
-				log.Printf("environment loaded from %s", p)
 				return
 			}
 		}
 	}
+}
 
-	log.Println("environment file not found, relying on existing process environment")
+func validateRequiredAuthEnv() {
+	required := []string{
+		"SUPABASE_URL",
+		"SUPABASE_ANON_KEY",
+		"SUPABASE_JWT_SECRET",
+		"GOOGLE_CLIENT_ID",
+		"GOOGLE_CLIENT_SECRET",
+		"AUTH_CALLBACK_URL",
+	}
+
+	missing := make([]string, 0)
+	for _, key := range required {
+		if strings.TrimSpace(os.Getenv(key)) == "" {
+			missing = append(missing, key)
+		}
+	}
+
+	if len(missing) > 0 {
+		panic("missing required environment variables: " + strings.Join(missing, ", "))
+	}
 }

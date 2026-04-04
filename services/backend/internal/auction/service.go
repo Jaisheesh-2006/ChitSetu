@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -14,6 +13,9 @@ import (
 	"time"
 
 	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
+
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
 )
 
 const (
@@ -22,14 +24,16 @@ const (
 )
 
 type Service struct {
-	repo       *Repository
-	wsManager  *ws.Manager
-	httpClient *http.Client
-	payoutMode string
-	keyID      string
-	keySecret  string
-	accountNo  string
-	fundAcctID string
+	repo            *Repository
+	wsManager       *ws.Manager
+	httpClient      *http.Client
+	payoutMode      string
+	keyID           string
+	keySecret       string
+	accountNo       string
+	fundAcctID      string
+	contractService *web3.ContractService
+	walletService   *wallet.Service
 }
 
 type PlaceBidInput struct {
@@ -38,20 +42,22 @@ type PlaceBidInput struct {
 	Increment int
 }
 
-func NewService(repo *Repository, wsManager *ws.Manager) *Service {
+func NewService(repo *Repository, wsManager *ws.Manager, contractService *web3.ContractService, walletService *wallet.Service) *Service {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("PAYOUT_MODE")))
 	if mode == "" {
 		mode = "simulate"
 	}
 	return &Service{
-		repo:       repo,
-		wsManager:  wsManager,
-		httpClient: &http.Client{Timeout: 20 * time.Second},
-		payoutMode: mode,
-		keyID:      strings.TrimSpace(os.Getenv("RAZORPAY_KEY_ID")),
-		keySecret:  strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
-		accountNo:  strings.TrimSpace(os.Getenv("RAZORPAY_X_ACCOUNT_NUMBER")),
-		fundAcctID: strings.TrimSpace(os.Getenv("RAZORPAY_PAYOUT_FUND_ACCOUNT_ID")),
+		repo:            repo,
+		wsManager:       wsManager,
+		httpClient:      &http.Client{Timeout: 20 * time.Second},
+		payoutMode:      mode,
+		keyID:           strings.TrimSpace(os.Getenv("RAZORPAY_KEY_ID")),
+		keySecret:       strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
+		accountNo:       strings.TrimSpace(os.Getenv("RAZORPAY_X_ACCOUNT_NUMBER")),
+		fundAcctID:      strings.TrimSpace(os.Getenv("RAZORPAY_PAYOUT_FUND_ACCOUNT_ID")),
+		contractService: contractService,
+		walletService:   walletService,
 	}
 }
 
@@ -210,19 +216,6 @@ func (s *Service) PlaceBid(ctx context.Context, input PlaceBidInput) (*Bid, *Auc
 		"timestamp":        bid.CreatedAt,
 	})
 
-	fund, fundErr := s.repo.GetFundByID(ctx, input.FundID)
-	if fundErr == nil {
-		activeMembers, membersErr := s.repo.CountActiveMembers(ctx, input.FundID)
-		if membersErr == nil && activeMembers > 0 {
-			discountCap := fund.MonthlyContribution * float64(activeMembers) * 0.5
-			if updatedSession.CurrentPrice >= discountCap-1e-9 {
-				if _, _, finalizeErr := s.FinalizeAuction(ctx, input.FundID, updatedSession.CycleNumber); finalizeErr != nil && !errors.Is(finalizeErr, ErrAuctionNotFinalized) {
-					log.Printf("auto-finalize at discount cap failed fund=%s cycle=%d: %v", input.FundID, updatedSession.CycleNumber, finalizeErr)
-				}
-			}
-		}
-	}
-
 	return bid, updatedSession, nil
 }
 
@@ -307,6 +300,38 @@ func (s *Service) FinalizeAuction(ctx context.Context, fundID string, cycleNumbe
 		"payout":         result.PayoutAmount,
 	})
 
+	// Trigger wallet balance settlement
+	go s.settleAuctionWalletBalances(fundID, cycleNumber, result)
+
+	// Trigger On-Chain Settlement
+	if s.contractService != nil && s.walletService != nil {
+		fund, err := s.repo.GetFundByID(ctx, fundID)
+		if err != nil || fund == nil || fund.ContractAddress == "" {
+			return result, true, nil
+		}
+		winnerAddr, _, err := s.walletService.GetWalletByUserID(context.Background(), result.WinnerUserID)
+		if err != nil {
+			log.Printf("automated on-chain auction finalization failed: %v", err)
+			return result, true, nil
+		}
+		// Calculate discount and scale to Wei using web3.INRToWei
+		totalAmountRaw := float64(fund.MaxMembers) * fund.MonthlyContribution
+		discountRaw := totalAmountRaw - result.PayoutAmount
+		if discountRaw < 0 {
+			discountRaw = 0
+		}
+		discountWei := web3.INRToWei(discountRaw)
+
+		go func() {
+			txHash, err := s.contractService.FinalizeAuction(context.Background(), fund.ContractAddress, winnerAddr, discountWei)
+			if err != nil {
+				log.Printf("automated on-chain auction finalization failed for fund %s: %v", fundID, err)
+			} else {
+				log.Printf("automated on-chain auction finalized: fund=%s tx=%s", fundID, txHash)
+			}
+		}()
+	}
+
 	if err := s.TriggerPayout(context.Background(), fundID, cycleNumber, result.WinnerUserID, result.PayoutAmount); err != nil {
 		log.Printf("trigger payout failed for fund=%s cycle=%d: %v", fundID, cycleNumber, err)
 	}
@@ -346,6 +371,66 @@ func (s *Service) RunPayoutRetryJob(ctx context.Context) error {
 		s.executePayoutAttempt(payout)
 	}
 	return nil
+}
+
+// settleAuctionWalletBalances handles wallet token transfer after auction finalization.
+// Winner gets payout, non-winners get dividend from the discount pool.
+func (s *Service) settleAuctionWalletBalances(fundID string, cycleNumber int, result *AuctionResult) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if s.walletService == nil || s.repo == nil {
+		log.Printf("settle wallet balances: wallet or repo service unavailable")
+		return
+	}
+
+	// Get fund for member count
+	fund, err := s.repo.GetFundByID(ctx, fundID)
+	if err != nil {
+		log.Printf("settle wallet balances fund=%s cycle=%d: failed to get fund: %v", fundID, cycleNumber, err)
+		return
+	}
+
+	// Get fund members
+	members, err := s.repo.GetFundMembers(ctx, fundID)
+	if err != nil {
+		log.Printf("settle wallet balances fund=%s cycle=%d: failed to get members: %v", fundID, cycleNumber, err)
+		return
+	}
+
+	if len(members) == 0 {
+		log.Printf("settle wallet balances fund=%s cycle=%d: no members found", fundID, cycleNumber)
+		return
+	}
+
+	// Step 1: Credit winner payout
+	log.Printf("settle wallet balances: crediting winner %s with %.2f tokens", result.WinnerUserID, result.PayoutAmount)
+	if err := s.walletService.CreditToBalance(ctx, result.WinnerUserID, result.PayoutAmount, "auction_winner_payout"); err != nil {
+		log.Printf("settle wallet balances: failed to credit winner: %v", err)
+	}
+
+	// Step 2: Calculate and credit dividends to non-winners
+	if len(members) > 1 {
+		discountAmount := (float64(fund.MaxMembers) * fund.MonthlyContribution) - result.PayoutAmount
+		if discountAmount > 0 {
+			numNonWinners := len(members) - 1
+			dividendPerMember := discountAmount / float64(numNonWinners)
+
+			log.Printf("settle wallet balances: distributing dividend %.2f to %d non-winners", dividendPerMember, numNonWinners)
+
+			for _, member := range members {
+				if member.UserID != result.WinnerUserID {
+					if err := s.walletService.CreditToBalance(ctx, member.UserID, dividendPerMember, "auction_dividend"); err != nil {
+						log.Printf("settle wallet balances: failed to credit dividend to %s: %v", member.UserID, err)
+					} else {
+						log.Printf("settle wallet balances: credited dividend %.2f to member %s", dividendPerMember, member.UserID)
+					}
+				}
+			}
+		}
+	}
+
+	log.Printf("settle wallet balances: completed for fund=%s cycle=%d", fundID, cycleNumber)
 }
 
 func (s *Service) executePayoutAttempt(payout PayoutRecord) {

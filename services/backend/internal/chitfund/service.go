@@ -12,15 +12,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
 	"github.com/google/uuid"
+
 	"github.com/robfig/cron/v3"
 )
 
 const resendFromAddress = "Acme <onboarding@resend.dev>"
 
 type Service struct {
-	repository   *Repository
-	resendAPIKey string
+	repository      *Repository
+	contractService *web3.ContractService
+	walletService   *wallet.Service
+	wsManager       *ws.Manager
+	resendAPIKey    string
 }
 
 type CreateFundInput struct {
@@ -56,11 +63,17 @@ func (e *AppError) Error() string {
 
 func NewService(
 	repository *Repository,
+	contractService *web3.ContractService,
+	walletService *wallet.Service,
+	wsManager *ws.Manager,
 ) *Service {
 
 	return &Service{
-		repository:   repository,
-		resendAPIKey: strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		repository:      repository,
+		contractService: contractService,
+		walletService:   walletService,
+		wsManager:       wsManager,
+		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 	}
 }
 
