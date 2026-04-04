@@ -45,7 +45,11 @@ export default function StatCard({ label, value, suffix, icon, delay = 0, animat
 
       <div style={{ position: "relative", zIndex: 2 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          {icon && <span style={{ fontSize: 16, filter: hovering ? "none" : "grayscale(30%)", transition: "filter 0.3s" }}>{icon}</span>}
+          {icon && <span style={{ 
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: accentColor, opacity: hovering ? 1 : 0.8,
+            transition: "all 0.3s"
+          }}>{icon}</span>}
           <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>

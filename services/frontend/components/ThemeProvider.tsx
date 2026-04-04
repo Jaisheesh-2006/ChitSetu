@@ -6,7 +6,7 @@ import CssBaseline from "@mui/material/CssBaseline";
 
 type ThemeMode = "dark" | "light";
 interface ThemeContextType { mode: ThemeMode; toggleMode: () => void; }
-const ThemeContext = createContext<ThemeContextType>({ mode: "dark", toggleMode: () => {} });
+const ThemeContext = createContext<ThemeContextType>({ mode: "dark", toggleMode: () => { } });
 export const useThemeMode = () => useContext(ThemeContext);
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -62,8 +62,8 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
               "&:hover": { boxShadow: "none" },
             },
             containedPrimary: {
-              background: "linear-gradient(135deg, #f97316, #ea580c)",
-              "&:hover": { background: "linear-gradient(135deg, #ea580c, #c2410c)" },
+              background: "linear-gradient(135deg, #f97316, #ea580c )",
+              "&:hover": { background: "linear-gradient(135deg, #ea580c , #c2410c)" },
             },
           },
         },

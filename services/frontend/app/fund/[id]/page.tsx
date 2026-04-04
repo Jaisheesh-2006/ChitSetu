@@ -11,6 +11,15 @@ import AuctionRulebook from "@/components/AuctionRulebook";
 import ChatPanel from "@/components/ChatPanel";
 import { useAuctionSocket } from "@/hooks/useAuctionSocket";
 import {
+  CircleDollarSign,
+  Calendar,
+  Users,
+  Timer,
+  CheckCircle2,
+  Wallet,
+  ExternalLink,
+} from "lucide-react";
+import {
   applyToFund,
   getFundDetails,
   getFundMembers,
@@ -491,7 +500,7 @@ export default function FundDetailPage() {
                 boxShadow: "var(--shadow-card)",
               }}
             >
-              ✓ {actionMessage}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}><CheckCircle2 size={14} /> {actionMessage}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -571,6 +580,53 @@ export default function FundDetailPage() {
                   >
                     ID: {id}
                   </motion.p>
+                  {fund?.contract_address && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.35 }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginTop: 4,
+                      }}
+                    >
+                      <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontWeight: 600 }}>CONTRACT:</span>
+                      <code style={{ fontSize: 11, color: "var(--color-text-secondary)", fontFamily: "monospace" }}>
+                        {fund.contract_address}
+                      </code>
+                      <a
+                        href={`https://amoy.polygonscan.com/address/${fund.contract_address}#internaltx`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          color: "var(--color-accent)",
+                          textDecoration: "none",
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          background: "rgba(249,115,22,0.1)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          transition: "all 0.2s",
+                          border: "1px solid rgba(249,115,22,0.2)"
+                        }}
+                        onMouseOver={(e) => { 
+                          e.currentTarget.style.background = "rgba(249,115,22,0.2)"; 
+                          e.currentTarget.style.borderColor = "rgba(249,115,22,0.4)";
+                        }}
+                        onMouseOut={(e) => { 
+                          e.currentTarget.style.background = "rgba(249,115,22,0.1)"; 
+                          e.currentTarget.style.borderColor = "rgba(249,115,22,0.2)";
+                        }}
+                      >
+                        View Ledger <ExternalLink size={10} />
+                      </a>
+                    </motion.div>
+                  )}
                 </div>
                 <motion.span
                   initial={{ opacity: 0, scale: 0.8 }}
@@ -632,21 +688,21 @@ export default function FundDetailPage() {
                 label="Total Pool"
                 value={fund?.total_amount || 0}
                 delay={0.1}
-                icon={<span>💰</span>}
+                icon={<CircleDollarSign size={16} />}
                 accent="#f97316"
               />
               <StatCard
                 label="Monthly"
                 value={fund?.monthly_contribution || 0}
                 delay={0.15}
-                icon={<span>📅</span>}
+                icon={<Calendar size={16} />}
                 accent="#60a5fa"
               />
               <StatCard
                 label="Members"
                 value={`${fund?.current_member_count || 0}/${fund?.max_members || 0}`}
                 delay={0.2}
-                icon={<span>👥</span>}
+                icon={<Users size={16} />}
                 accent="#2dd4bf"
                 animate={false}
               />
@@ -655,7 +711,7 @@ export default function FundDetailPage() {
                 value={fund?.duration_months || 0}
                 suffix="mo"
                 delay={0.25}
-                icon={<span>⏱️</span>}
+                icon={<Timer size={16} />}
                 accent="#a78bfa"
               />
             </div>

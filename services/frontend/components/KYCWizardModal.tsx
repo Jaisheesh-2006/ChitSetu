@@ -3,6 +3,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  CheckCircle2,
+  AlertTriangle,
+  BarChart3,
+  Info,
+  XCircle,
+  ArrowRight,
+} from "lucide-react";
+import {
   getKYCStatus, verifyPAN, fetchKYCHistory, runMLPrediction, type KYCStatus,
 } from "@/services/api";
 
@@ -210,7 +218,7 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
 
                 {/* PAN Failed */}
                 {step === "pan_failed" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 0" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 6, background: "var(--color-danger-light)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-danger)", fontWeight: 700 }}>✕</div>
+                  <div style={{ width: 36, height: 36, borderRadius: 6, background: "var(--color-danger-light)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-danger)" }}><XCircle size={24} /></div>
                   <p style={{ fontSize: 14, fontWeight: 600, color: "var(--color-danger)", margin: 0 }}>PAN Verification Failed</p>
                   <p style={{ fontSize: 12, color: "var(--color-text-muted)", textAlign: "center", margin: 0 }}>Check your PAN number in profile and retry.</p>
                   <div style={{ width: "100%", marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -222,7 +230,7 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
                 {/* Credit Result */}
                 {step === "credit_result" && credit && <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#22c55e", fontSize: 14, fontWeight: 700 }}>✓</div>
+                    <div style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#22c55e" }}><CheckCircle2 size={16} /></div>
                     <span style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)" }}>PAN Verified</span>
                   </div>
                   {credit.hasCibil && credit.cibilScore !== null ? (
@@ -235,7 +243,7 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
                     </div>
                   ) : (
                     <div style={{ background: "var(--color-bg)", border: "1px solid rgba(245,158,11,0.15)", borderRadius: 6, padding: "10px 12px", marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>⚠️</span>
+                      <AlertTriangle size={18} />
                       <div><p style={{ fontSize: 13, fontWeight: 600, color: "#f59e0b", margin: 0 }}>No Credit History</p><p style={{ fontSize: 11, color: "var(--color-text-muted)", margin: 0 }}>We&apos;ll generate a profile from bank data</p></div>
                     </div>
                   )}
@@ -264,14 +272,14 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
                 {/* History Preview */}
                 {step === "history_preview" && <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                    <span style={{ fontSize: 16 }}>📊</span>
+                    <BarChart3 size={18} />
                     <div><p style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)", margin: 0 }}>Synthetic History</p><p style={{ fontSize: 11, color: "var(--color-text-muted)", margin: 0 }}>AI-generated for ML scoring</p></div>
                   </div>
                   <div style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: 6, padding: "12px 14px", marginBottom: 12 }}>
                     {synHist ? (synHist.has_history ? <HistCredit h={synHist as HistoryWithCredit} /> : <HistCold h={synHist as HistoryColdStart} />) : <p style={{ fontSize: 12, color: "var(--color-text-muted)", textAlign: "center", margin: 0 }}>Ready to calculate.</p>}
                   </div>
                   <div style={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: 6, padding: "8px 10px", marginBottom: 14, display: "flex", gap: 6 }}>
-                    <span style={{ fontSize: 12, flexShrink: 0 }}>ℹ️</span>
+                    <Info size={14} style={{ flexShrink: 0 }} />
                     <p style={{ fontSize: 11, color: "var(--color-text-muted)", margin: 0, lineHeight: 1.5 }}>Synthetically generated. Used only for score calculation.</p>
                   </div>
                   <Btn onClick={doML}>Calculate Trust Score →</Btn>
@@ -282,7 +290,7 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
 
                 {/* Complete */}
                 {step === "complete" && result && <div style={{ textAlign: "center" }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#22c55e", fontSize: 16, fontWeight: 700 }}>✓</div>
+                  <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#22c55e" }}><CheckCircle2 size={18} /></div>
                   <p style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text)", margin: "10px 0 2px" }}>Score Ready</p>
                   <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 16 }}>Your trust score has been calculated</p>
 
@@ -310,7 +318,7 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
 
                 {/* Error */}
                 {step === "error" && <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "16px 0" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 6, background: "var(--color-danger-light)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-danger)", fontWeight: 700 }}>✕</div>
+                  <div style={{ width: 36, height: 36, borderRadius: 6, background: "var(--color-danger-light)", border: "1px solid rgba(239,68,68,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-danger)" }}><XCircle size={24} /></div>
                   <p style={{ fontSize: 14, fontWeight: 600, color: "var(--color-danger)", margin: 0 }}>Error</p>
                   <p style={{ fontSize: 12, color: "var(--color-text-muted)", textAlign: "center", margin: 0 }}>{errMsg || "Something went wrong."}</p>
                   <div style={{ width: "100%", marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
