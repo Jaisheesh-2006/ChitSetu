@@ -68,7 +68,6 @@ type TokenPair struct {
 }
 
 type passwordResetTokenDocument struct {
-	ID        string    `bson:"_id"`
 	UserID    string    `bson:"user_id"`
 	TokenHash string    `bson:"token_hash"`
 	ExpiresAt time.Time `bson:"expires_at"`
@@ -412,7 +411,12 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 		return fmt.Errorf("update user password: %w", err)
 	}
 
-	_, _ = s.resetTokenCol.DeleteOne(ctx, bson.M{"_id": resetDoc.ID})
+	_, _ = s.resetTokenCol.DeleteMany(ctx, bson.M{
+		"$or": []bson.M{
+			{"user_id": resetDoc.UserID},
+			{"token_hash": hash},
+		},
+	})
 
 	return nil
 }
