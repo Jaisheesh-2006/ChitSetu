@@ -65,6 +65,37 @@ type KYCData struct {
 type Repository struct {
 	profilesCol *mongo.Collection
 	usersCol    *mongo.Collection
+	fundsCol    *mongo.Collection
+	membersCol  *mongo.Collection
+	contribCol  *mongo.Collection
+}
+
+type UserFundMembership struct {
+	FundID   string     `bson:"fund_id"`
+	Status   string     `bson:"status"`
+	JoinedAt *time.Time `bson:"joined_at,omitempty"`
+}
+
+type UserFund struct {
+	ID                  string    `bson:"_id"`
+	Name                string    `bson:"name"`
+	TotalAmount         float64   `bson:"total_amount"`
+	MonthlyContribution float64   `bson:"monthly_contribution"`
+	DurationMonths      int       `bson:"duration_months"`
+	Status              string    `bson:"status"`
+	StartDate           time.Time `bson:"start_date"`
+	CreatorID           string    `bson:"creator_id"`
+}
+
+type Contribution struct {
+	FundID      string    `bson:"fund_id"`
+	UserID      string    `bson:"user_id"`
+	CycleNumber int       `bson:"cycle_number"`
+	AmountDue   float64   `bson:"amount_due"`
+	DueDate     time.Time `bson:"due_date"`
+	Status      string    `bson:"status"`
+	PaidAt      time.Time `bson:"paid_at,omitempty"`
+	CreatedAt   time.Time `bson:"created_at"`
 }
 
 func NewRepository(db *mongo.Database) *Repository {
