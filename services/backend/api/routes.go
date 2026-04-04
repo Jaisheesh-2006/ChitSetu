@@ -13,6 +13,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/payments"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/users"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
 	"github.com/Jaisheesh-2006/ChitSetu/middleware"
 	"github.com/Jaisheesh-2006/ChitSetu/models"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
@@ -22,7 +23,7 @@ import (
 
 // DBPinger captures the minimum database behavior needed for health checks.
 
-func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authService *auth.Service, chitfundHandler *chitfund.Handler, paymentHandler *payments.Handler, chatHandler *chat.Handler) *gin.Engine {
+func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authService *auth.Service, chitfundHandler *chitfund.Handler, paymentHandler *payments.Handler, chatHandler *chat.Handler, walletService *wallet.Service, web3Handlers *Web3Handlers) *gin.Engine {
 	router := gin.New()
 	router.Use(middleware.CORS(), gin.Logger(), gin.Recovery())
 	authHandler := auth.NewHandler(authService)
@@ -123,6 +124,22 @@ func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authSer
 	paymentsGroup.POST("/create-order", paymentHandler.CreateOrder)
 	paymentsGroup.POST("/verify", paymentHandler.Verify)
 
+	// Web3 endpoints
+	if web3Handlers != nil {
+		web3Group := router.Group("/web3")
+		web3Group.Use(authMiddleware)
+		{
+			web3Group.GET("/wallet/info", web3Handlers.GetWalletInfo)
+			web3Group.GET("/wallet/:address/history", web3Handlers.GetWalletHistory)
+			web3Group.POST("/wallet/create", web3Handlers.CreateWallet)
+			web3Group.POST("/mint", web3Handlers.MintTokens)
+			web3Group.POST("/fund/join", web3Handlers.JoinFund)
+			web3Group.POST("/fund/deposit", web3Handlers.DepositContribution)
+			web3Group.POST("/fund/finalize", web3Handlers.FinalizeAuction)
+			web3Group.POST("/token/approve", web3Handlers.ApproveToken)
+			web3Group.GET("/tx/status", web3Handlers.CheckTxStatus)
+		}
+	}
 	fundGroup.GET("/:id/contributions/current", chitfundHandler.CurrentCycleContributions)
 	fundGroup.POST("/:id/auction/start", auctionHandler.StartAuction)
 	fundGroup.POST("/:id/auction/activate", auctionHandler.ActivateAuction)

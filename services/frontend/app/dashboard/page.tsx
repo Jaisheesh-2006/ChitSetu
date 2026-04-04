@@ -19,12 +19,14 @@ import {
   getMyFunds,
   getRiskScore,
   getMyContributions,
+  getWalletInfo,
   type ProfileInput,
   type CreateFundInput,
   type ActiveFund,
   type RiskScoreData,
   type Contribution,
   type ProfileData,
+  type WalletInfo
 } from "@/services/api";
 
 type Tab = "overview" | "profile" | "create";
@@ -205,24 +207,29 @@ function Overview() {
   const [funds, setFunds] = useState<ActiveFund[]>([]);
   const [risk, setRisk] = useState<RiskScoreData | null>(null);
   const [contribs, setContribs] = useState<Contribution[]>([]);
+  const [wallet, setWallet] = useState<WalletInfo | null>(null);
+
 
   useEffect(() => {
     (async () => {
-      const [f, r, c] = await Promise.allSettled([
+      const [f, r, c, w] = await Promise.allSettled([
         getMyFunds(),
         getRiskScore(),
         getMyContributions(),
+        getWalletInfo(),
       ]);
       if (f.status === "fulfilled") setFunds(f.value || []);
       if (r.status === "fulfilled") setRisk(r.value);
       if (c.status === "fulfilled") setContribs(c.value || []);
+      if (w.status === "fulfilled") setWallet(w.value);
       setLoading(false);
     })();
 
     const interval = setInterval(async () => {
       try {
-        const [c] = await Promise.allSettled([getMyContributions()]);
+        const [c, w] = await Promise.allSettled([getMyContributions(), getWalletInfo()]);
         if (c.status === "fulfilled") setContribs(c.value || []);
+        if (w.status === "fulfilled") setWallet(w.value);
       } catch {
         // Ignore errors in periodic refresh
       }
@@ -451,7 +458,7 @@ function Overview() {
         )}
       </div>
 
-      {/* Wallet & Balance Card
+      Wallet & Balance Card
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <GlassCard hover={false} depth={true}>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
@@ -488,7 +495,7 @@ function Overview() {
             </div>
           </div>
         </GlassCard>
-      </motion.div> */}
+      </motion.div>
 
       <div>
         <div

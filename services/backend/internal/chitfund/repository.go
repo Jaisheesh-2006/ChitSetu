@@ -35,6 +35,7 @@ type Fund struct {
 	MonthlyContribution float64   `bson:"monthly_contribution" json:"monthly_contribution"`
 	DurationMonths      int       `bson:"duration_months" json:"duration_months"`
 	MaxMembers          int       `bson:"max_members" json:"max_members"`
+	ContractAddress     string    `bson:"contract_address,omitempty" json:"contract_address,omitempty"`
 	Status              string    `bson:"status" json:"status"`
 	StartDate           time.Time `bson:"start_date" json:"start_date"`
 	CreatorID           string    `bson:"creator_id" json:"creator_id"`

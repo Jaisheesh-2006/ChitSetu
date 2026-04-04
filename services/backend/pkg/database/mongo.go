@@ -110,6 +110,10 @@ func (s *Store) EnsureIndexes(ctx context.Context) error {
 			{Keys: bson.D{{Key: "session_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_payment_orders_session")},
 			{Keys: bson.D{{Key: "order_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_payment_orders_order")},
 		},
+		"bids": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetName("idx_bids_fund_cycle_number")},
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}, {Key: "created_at", Value: -1}}, Options: options.Index().SetName("idx_bids_fund_cycle_created")},
+		},
 		"auction_sessions": {
 			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_auction_sessions_fund_cycle")},
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "last_bid_at", Value: 1}, {Key: "created_at", Value: 1}}, Options: options.Index().SetName("idx_auction_sessions_live_idle")},

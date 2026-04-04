@@ -1,3 +1,6 @@
+//go:build contract_stubs
+// +build contract_stubs
+
 package web3
 
 import (

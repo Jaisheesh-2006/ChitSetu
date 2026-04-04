@@ -12,15 +12,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
 	"github.com/google/uuid"
+
 	"github.com/robfig/cron/v3"
 )
 
 const resendFromAddress = "Acme <onboarding@resend.dev>"
 
 type Service struct {
-	repository   *Repository
-	resendAPIKey string
+	repository      *Repository
+	contractService *web3.ContractService
+	walletService   *wallet.Service
+	wsManager       *ws.Manager
+	resendAPIKey    string
 }
 
 type CreateFundInput struct {
@@ -56,11 +63,17 @@ func (e *AppError) Error() string {
 
 func NewService(
 	repository *Repository,
+	contractService *web3.ContractService,
+	walletService *wallet.Service,
+	wsManager *ws.Manager,
 ) *Service {
 
 	return &Service{
-		repository:   repository,
-		resendAPIKey: strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		repository:      repository,
+		contractService: contractService,
+		walletService:   walletService,
+		wsManager:       wsManager,
+		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 	}
 }
 
@@ -100,6 +113,28 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 	}
 
 	durationMonths := input.MaxMembers
+	contractAddress := ""
+
+	if s.contractService != nil {
+		tokenAddress := strings.TrimSpace(os.Getenv("TOKEN_CONTRACT_ADDRESS"))
+		if tokenAddress == "" {
+			return nil, &AppError{StatusCode: http.StatusServiceUnavailable, Message: "token contract is not configured"}
+		}
+
+		_, deployedAddress, deployErr := s.contractService.CreateFund(
+			ctx,
+			tokenAddress,
+			uint64(input.MaxMembers),
+			web3.INRToWei(input.MonthlyContribution),
+			strings.TrimSpace(input.Name),
+		)
+		if deployErr != nil {
+			return nil, &AppError{StatusCode: http.StatusBadGateway, Message: fmt.Sprintf("failed to deploy fund contract: %v", deployErr)}
+		}
+		contractAddress = deployedAddress
+	} else {
+		contractAddress = "pending:web3_not_configured"
+	}
 
 	now := time.Now()
 	id := uuid.NewString()
@@ -112,6 +147,7 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 		MonthlyContribution: input.MonthlyContribution,
 		DurationMonths:      durationMonths,
 		MaxMembers:          input.MaxMembers,
+		ContractAddress:     contractAddress,
 		Status:              "open",
 		StartDate:           input.StartDate,
 		CreatorID:           creatorID,

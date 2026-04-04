@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/robfig/cron/v3"
 )
 
@@ -29,6 +32,9 @@ type Service struct {
 	appBaseURL           string
 	resendAPIKey         string
 	defaultReminderEmail string
+
+	contractService *web3.ContractService
+	walletService   *wallet.Service
 }
 
 type SessionDetails struct {
@@ -51,7 +57,7 @@ type VerifyInput struct {
 	RazorpaySignature string
 }
 
-func NewService(repo *Repository) *Service {
+func NewService(repo *Repository, contractSvc *web3.ContractService, walletSvc *wallet.Service) *Service {
 	baseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 	if baseURL == "" {
 		baseURL = "https://yourapp.com"
@@ -64,6 +70,9 @@ func NewService(repo *Repository) *Service {
 		appBaseURL:           strings.TrimRight(baseURL, "/"),
 		resendAPIKey:         strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		defaultReminderEmail: strings.TrimSpace(os.Getenv("PAYMENT_REMINDER_FALLBACK_EMAIL")),
+
+		contractService: contractSvc,
+		walletService:   walletSvc,
 	}
 }
 
@@ -80,7 +89,17 @@ func (s *Service) StartDailyReminderCron() *cron.Cron {
 		log.Printf("failed to register payment reminder cron: %v", err)
 		return c
 	}
-
+	_, err = c.AddFunc("*/2 * * * *", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := s.RunBlockchainRetryJob(ctx); err != nil {
+			log.Printf("blockchain retry cron error: %v", err)
+		}
+	})
+	if err != nil {
+		log.Printf("failed to register blockchain retry cron: %v", err)
+		return c
+	}
 	c.Start()
 	return c
 }
@@ -242,8 +261,186 @@ func (s *Service) VerifyPayment(ctx context.Context, userID string, input Verify
 	if contribution == nil {
 		return false, nil
 	}
+	// BLOCKCHAIN CHECK
+	if strings.TrimSpace(contribution.BlockchainTxHash) != "" {
+		log.Println("already minted")
+		return false, nil
+	}
+
+	if s.contractService == nil {
+		log.Println("web3 not configured")
+		return false, nil
+	}
+
+	// BLOCKCHAIN PROVISIONING
+	// ProvisionTokensInBackground handles the multi-step mint → wait → deposit chain.
+	// It's still async from the user's perspective, but now strictly sequential on-chain.
+	go s.ProvisionTokensInBackground(userID, contribution.ID)
 
 	return true, nil
+}
+
+// ProvisionTokensInBackground handles the multi-step mint → wait → deposit chain
+func (s *Service) ProvisionTokensInBackground(userID, contributionID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+
+	// 1. Reload the contribution
+	contrib, err := s.repo.GetPaidContribution(ctx, contributionID)
+	if err != nil {
+		log.Printf("provisioning [%s]: failed to fetch contrib: %v", contributionID, err)
+		return
+	}
+
+	if contrib.BlockchainStatus == "confirmed" {
+		return
+	}
+
+	// 2. Resolve wallet
+	walletAddr, _, err := s.walletService.GetWalletByUserID(ctx, userID)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "wallet not found") {
+			autoAddr, createErr := s.walletService.CreateWallet(ctx, userID)
+			if createErr != nil {
+				log.Printf("provisioning [%s]: wallet not found and auto-provision failed: %v", contributionID, createErr)
+				return
+			}
+			walletAddr = autoAddr
+			log.Printf("provisioning [%s]: auto-provisioned wallet %s", contributionID, walletAddr)
+		} else {
+			log.Printf("provisioning [%s]: failed to resolve wallet: %v", contributionID, err)
+			return
+		}
+	}
+
+	// 3. Resolve amount (INR to Wei - 18 decimals)
+	amountWei := web3.INRToWei(contrib.AmountDue)
+	log.Printf("provisioning [%s]: target amount %s wei", contributionID, amountWei.String())
+
+	// 4. MINT (Only if balance is low)
+	currentBal, balErr := s.contractService.GetTokenBalance(ctx, walletAddr)
+	if balErr != nil {
+		log.Printf("provisioning [%s]: failed to check balance: %v", contributionID, balErr)
+		return
+	}
+
+	if currentBal.Cmp(amountWei) < 0 {
+		_ = s.repo.SetContributionBlockchainStatus(ctx, contributionID, "minting tokens")
+		mintHash, err := s.contractService.MintTokens(ctx, walletAddr, amountWei)
+		if err != nil {
+			log.Printf("provisioning [%s]: mint failed: %v", contributionID, err)
+			_ = s.repo.SetContributionBlockchainFailed(ctx, contributionID, err)
+			return
+		}
+		log.Printf("provisioning [%s]: mint confirmed in tx %s", contributionID, mintHash)
+
+		// Update local wallet balance state
+		if err := s.walletService.AddMintedTokens(ctx, userID, contrib.AmountDue); err != nil {
+			log.Printf("provisioning [%s]: local balance update failed: %v", contributionID, err)
+		}
+	}
+
+	// 5. Resolve Fund Address
+	fundAddr, err := s.repo.GetFundContractAddress(ctx, contrib.FundID)
+	if err != nil || strings.TrimSpace(fundAddr) == "" || strings.HasPrefix(fundAddr, "pending:") {
+		log.Printf("provisioning [%s]: fund address pending, skipping", contributionID)
+		return
+	}
+
+	// 6. DEPOSIT (Auto-joins if needed)
+	_ = s.repo.SetContributionBlockchainStatus(ctx, contributionID, "depositing to pool")
+
+	// Check on-chain membership first
+	isPaidOnChain, err := s.contractService.IsMemberPaid(ctx, fundAddr, walletAddr)
+	if err == nil && isPaidOnChain {
+		log.Printf("provisioning [%s]: already paid on-chain", contributionID)
+		_ = s.repo.SetContributionBlockchainConfirmed(ctx, contributionID)
+		return
+	}
+
+	depositHash, err := s.contractService.DepositContribution(ctx, fundAddr, walletAddr)
+	if err != nil {
+		// Auto-Join fallback
+		if strings.Contains(err.Error(), "Not member") {
+			_ = s.repo.SetContributionBlockchainStatus(ctx, contributionID, "joining fund")
+			joinHash, joinErr := s.contractService.JoinFund(ctx, fundAddr, walletAddr)
+			if joinErr == nil {
+				log.Printf("provisioning [%s]: auto-joined in tx %s", contributionID, joinHash)
+				// Retry deposit
+				_ = s.repo.SetContributionBlockchainStatus(ctx, contributionID, "depositing to pool")
+				depositHash, err = s.contractService.DepositContribution(ctx, fundAddr, walletAddr)
+			} else {
+				err = fmt.Errorf("auto-join failed: %v", joinErr)
+			}
+		}
+	}
+
+	if err != nil {
+		log.Printf("provisioning [%s]: deposit failed: %v", contributionID, err)
+		_ = s.repo.SetContributionBlockchainFailed(ctx, contributionID, err)
+		return
+	}
+
+	_ = s.repo.SetContributionBlockchainPending(ctx, contributionID, depositHash)
+	s.watchContributionConfirmation(contributionID, depositHash)
+}
+
+func (s *Service) RunBlockchainRetryJob(ctx context.Context) error {
+	if s.contractService == nil {
+		return nil
+	}
+
+	failedItems, err := s.repo.ListContributionsForBlockchainRetry(ctx, 100)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range failedItems {
+		if strings.TrimSpace(item.BlockchainTxHash) != "" {
+			continue
+		}
+
+		// The amount is already resolved to Wei inside ProvisionTokensInBackground
+		go s.ProvisionTokensInBackground(item.UserID, item.ID)
+	}
+
+	return nil
+}
+
+func (s *Service) watchContributionConfirmation(contributionID, txHash string) {
+	receipt, err := s.contractService.WaitForReceiptWithTimeout(txHash, 2*time.Minute)
+	if err != nil {
+		_ = s.repo.SetContributionBlockchainFailed(context.Background(), contributionID, err)
+		return
+	}
+
+	if receipt != nil && receipt.Status == types.ReceiptStatusSuccessful {
+		// Transaction succeeded - now update wallet and pool balances
+		ctx := context.Background()
+
+		// Fetch contribution to get user and amount
+		contrib, err := s.repo.GetPaidContribution(ctx, contributionID)
+		if err != nil {
+			log.Printf("watch confirmation [%s]: failed to fetch contribution: %v", contributionID, err)
+			_ = s.repo.SetContributionBlockchainConfirmed(ctx, contributionID)
+			return
+		}
+
+		// CRITICAL: Debit from user wallet and credit to fund pool
+		amountInTokens := contrib.AmountDue
+
+		// Debit from user's wallet
+		if err := s.walletService.DebitFromBalance(ctx, contrib.UserID, amountInTokens); err != nil {
+			log.Printf("watch confirmation [%s]: failed to debit from wallet: %v", contributionID, err)
+		} else {
+			log.Printf("watch confirmation [%s]: user wallet debited (-%.2f tokens)", contributionID, amountInTokens)
+		}
+
+		_ = s.repo.SetContributionBlockchainConfirmed(ctx, contributionID)
+		return
+	}
+
+	_ = s.repo.SetContributionBlockchainFailed(context.Background(), contributionID, fmt.Errorf("transaction reverted"))
 }
 
 func (s *Service) createRazorpayOrder(ctx context.Context, payload map[string]any) (string, error) {
