@@ -225,7 +225,7 @@ export default function LandingPage() {
                     <span style={{ fontSize: 10, color: "var(--color-text-muted)", fontWeight: 600 }}>OR</span>
                     <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.04)" }} />
                   </div>
-                  <GoogleAuthBtn />
+                  <GoogleAuthBtn variant={tab === "login" ? "signin" : "signup"} />
                 </motion.form>
               </AnimatePresence>
 
