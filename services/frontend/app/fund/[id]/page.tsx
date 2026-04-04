@@ -24,10 +24,19 @@ import {
   getProfile,
   type ApplyResult,
   type FundDetails,
+  type FundMember,
+  type ProfileData,
   type AuctionSnapshot,
   type CurrentCycleContributions,
   type FundApplicationStatus,
 } from "@/services/api";
+
+type ProfileWithContainer = ProfileData & {
+  profile?: {
+    pan?: string;
+    pan_number?: string;
+  };
+};
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -110,7 +119,7 @@ export default function FundDetailPage() {
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
 
   const [fund, setFund] = useState<FundDetails | null>(null);
-  const [members, setMembers] = useState<any[]>([]);
+  const [members, setMembers] = useState<FundMember[]>([]);
   const [isCreator, setIsCreator] = useState(false);
   const [contribData, setContribData] =
     useState<CurrentCycleContributions | null>(null);
@@ -256,8 +265,8 @@ export default function FundDetailPage() {
   useEffect(() => {
     (async () => {
       try {
-        const p = await getProfile();
-        const pan = (p as any).profile?.pan || (p as any).pan_number;
+        const p = (await getProfile()) as ProfileWithContainer;
+        const pan = p.profile?.pan || p.profile?.pan_number || p.pan_number;
         setProfileIncomplete(!p.full_name || !pan);
       } catch {
         setProfileIncomplete(true);

@@ -37,9 +37,9 @@ export default function GlassCard({
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: "easeOut", delay }}
-      onMouseMove={onMove}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => { setRot({ x: 0, y: 0 }); setHovering(false); }}
+      onMouseMove={hover ? onMove : undefined}
+      onMouseEnter={hover ? () => setHovering(true) : undefined}
+      onMouseLeave={hover ? () => { setRot({ x: 0, y: 0 }); setHovering(false); } : undefined}
       onClick={onClick}
       className={`${padding} ${onClick ? "cursor-pointer" : ""} ${className}`}
       style={{
@@ -48,10 +48,10 @@ export default function GlassCard({
         background: "var(--color-bg-card)",
         border: "none",
         borderRadius: 10,
-        boxShadow: hovering
+        boxShadow: hover && hovering
           ? "var(--shadow-hover), var(--shadow-glow-sm)"
           : "var(--shadow-card)",
-        transform: depth && hovering
+        transform: hover && depth && hovering
           ? `perspective(800px) rotateX(${rot.x}deg) rotateY(${rot.y}deg) translateY(-3px)`
           : "perspective(800px) rotateX(0) rotateY(0) translateY(0)",
         transition: "box-shadow 0.35s ease, transform 0.3s ease",
@@ -65,7 +65,7 @@ export default function GlassCard({
       {/* Top edge highlight */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: 1,
-        background: hovering
+        background: hover && hovering
           ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent)"
           : "linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent)",
         transition: "background 0.3s",

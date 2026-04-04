@@ -2,12 +2,13 @@
 import React, { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChatMessage, getChatMessages, sendChatMessage, getCurrentUserId } from "@/services/api";
+import type { AuctionWSMessage } from "@/hooks/useAuctionSocket";
 
 interface Props {
   fundId: string;
   chatType: "fund" | "auction";
   cycleNumber?: number;
-  incomingWsMessage?: any;
+  incomingWsMessage?: AuctionWSMessage | null;
 }
 
 export default function ChatPanel({ fundId, chatType, cycleNumber, incomingWsMessage }: Props) {

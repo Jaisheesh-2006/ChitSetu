@@ -3,8 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
-import Alert from "@mui/material/Alert";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 // Load UI components
 function UPILogo() {
@@ -17,8 +16,50 @@ function UPILogo() {
 
 // Ensure Razorpay shape
 declare global {
+    interface RazorpayPaymentSuccessResponse {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+    }
+
+    interface RazorpayPaymentFailedResponse {
+        error?: {
+            description?: string;
+        };
+    }
+
+    interface RazorpayOptions {
+        key: string;
+        amount: number;
+        currency: string;
+        name: string;
+        description: string;
+        order_id: string;
+        handler: (response: RazorpayPaymentSuccessResponse) => void;
+        prefill: {
+            name: string;
+            email: string;
+        };
+        theme: {
+            color: string;
+        };
+        method: {
+            upi: boolean;
+            card: boolean;
+        };
+    }
+
+    interface RazorpayInstance {
+        on(event: "payment.failed", handler: (response: RazorpayPaymentFailedResponse) => void): void;
+        open(): void;
+    }
+
+    interface RazorpayConstructor {
+        new (options: RazorpayOptions): RazorpayInstance;
+    }
+
     interface Window {
-        Razorpay: any;
+        Razorpay?: RazorpayConstructor;
     }
 }
 
@@ -66,14 +107,14 @@ export default function UPIPaymentWidget({
 
         setLoading(true);
 
-        const options = {
+        const options: RazorpayOptions = {
             key: razorpayKeyId,
             amount: Math.round(amount * 100), // convert to paise
             currency: "INR",
             name: "ChitSetu",
             description: `Contribution for Fund ${fundId} - Cycle ${cycleNo}`,
             order_id: orderId,
-            handler: function (response: any) {
+            handler: function (response: RazorpayPaymentSuccessResponse) {
                 setLoading(false);
                 onSuccess(response);
             },
@@ -91,9 +132,9 @@ export default function UPIPaymentWidget({
         };
 
         const rzp = new window.Razorpay(options);
-        rzp.on("payment.failed", function (response: any) {
+        rzp.on("payment.failed", function (response: RazorpayPaymentFailedResponse) {
             setLoading(false);
-            onError(response.error.description || "Payment failed");
+            onError(response.error?.description || "Payment failed");
         });
 
         rzp.open();

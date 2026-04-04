@@ -27,7 +27,6 @@ export default function AuthCallbackPage() {
         }
 
         const accessToken = data.session.access_token;
-        const refreshToken = data.session.refresh_token;
 
         // Verify token with backend and trigger local user upsert.
         const verifyRes = await fetch(`${API_BASE}/auth/verify`, {

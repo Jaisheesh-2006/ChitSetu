@@ -134,7 +134,6 @@ export default function KYCWizardModal({ isOpen, onClose, onComplete }: Props) {
       if (m.toLowerCase().includes("bank") || m.toLowerCase().includes("ifsc")) { setFErr({ f: m.toLowerCase().includes("ifsc") ? "ifsc" : "acc", m }); setStep("bank_details"); }
       else { setErrMsg(m); setStep("error"); }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bankAcc, ifsc]);
 
   const doML = useCallback(async () => {

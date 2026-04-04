@@ -25,6 +25,8 @@ export interface AuctionWSMessage {
   message?: string;
   full_name?: string;
   chat_type?: string;
+  _id?: string;
+  created_at?: string;
 }
 
 interface UseAuctionSocketReturn {
@@ -41,53 +43,6 @@ export function useAuctionSocket(fundId: string | undefined): UseAuctionSocketRe
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const connect = useCallback(() => {
-    if (!fundId) return;
-
-    const token = getAccessToken();
-    if (!token) {
-      setConnectionError("Not authenticated");
-      return;
-    }
-
-    // Send token as query param — the backend middleware can parse it
-    const url = `${WS_BASE}/ws/funds/${fundId}?token=${encodeURIComponent(token)}`;
-
-    try {
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        setIsConnected(true);
-        setConnectionError(null);
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as AuctionWSMessage;
-          setLastMessage(data);
-        } catch {
-          // Ignore non-JSON messages
-        }
-      };
-
-      ws.onerror = () => {
-        setConnectionError("WebSocket connection error");
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        wsRef.current = null;
-        // Auto-reconnect after 3s
-        reconnectTimer.current = setTimeout(() => {
-          connect();
-        }, 3000);
-      };
-    } catch {
-      setConnectionError("Failed to create WebSocket connection");
-    }
-  }, [fundId]);
-
   const sendMessage = useCallback((payload: unknown): boolean => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return false;
@@ -102,9 +57,62 @@ export function useAuctionSocket(fundId: string | undefined): UseAuctionSocketRe
   }, []);
 
   useEffect(() => {
-    connect();
+    if (!fundId) return;
+
+    let isUnmounted = false;
+
+    const openSocket = () => {
+      if (isUnmounted) return;
+
+      const token = getAccessToken();
+      if (!token) {
+        setConnectionError("Not authenticated");
+        return;
+      }
+
+      // Send token as query param — the backend middleware can parse it
+      const url = `${WS_BASE}/ws/funds/${fundId}?token=${encodeURIComponent(token)}`;
+
+      try {
+        const ws = new WebSocket(url);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          setIsConnected(true);
+          setConnectionError(null);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data) as AuctionWSMessage;
+            setLastMessage(data);
+          } catch {
+            // Ignore non-JSON messages
+          }
+        };
+
+        ws.onerror = () => {
+          setConnectionError("WebSocket connection error");
+        };
+
+        ws.onclose = () => {
+          setIsConnected(false);
+          wsRef.current = null;
+          if (isUnmounted) return;
+          // Auto-reconnect after 3s
+          reconnectTimer.current = setTimeout(() => {
+            openSocket();
+          }, 3000);
+        };
+      } catch {
+        setConnectionError("Failed to create WebSocket connection");
+      }
+    };
+
+    openSocket();
 
     return () => {
+      isUnmounted = true;
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null; // prevent reconnect on unmount
@@ -112,7 +120,7 @@ export function useAuctionSocket(fundId: string | undefined): UseAuctionSocketRe
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [fundId]);
 
   return { lastMessage, isConnected, connectionError, sendMessage };
 }

@@ -10,7 +10,7 @@ import ChatPanel from "@/components/ChatPanel";
 import { useAuctionSocket } from "@/hooks/useAuctionSocket";
 import {
     getAuction, placeBid as apiPlaceBid, getFundDetails, getFundMembers, activateAuction as apiActivateAuction,
-    getCurrentUserId, type AuctionSnapshot, type AuctionBid, type FundDetails
+    getCurrentUserId, type AuctionSnapshot, type AuctionBid, type FundDetails, type FundMember
 } from "@/services/api";
 
 function fmt(n: number) {
@@ -34,10 +34,9 @@ export default function AuctionRoomPage() {
     const [countdown, setCountdown] = useState(IDLE_WINDOW);
     const [loading, setLoading] = useState(true);
     const [bidLoading, setBidLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [bidError, setBidError] = useState<string | null>(null);
     const [winnerInfo, setWinnerInfo] = useState<{ userId: string; price: number; payout: number } | null>(null);
-    const [members, setMembers] = useState<any[]>([]);
+    const [members, setMembers] = useState<FundMember[]>([]);
     const [participantCount, setParticipantCount] = useState(0);
     const [waitingForParticipants, setWaitingForParticipants] = useState(true);
     const [currentLeaderUserId, setCurrentLeaderUserId] = useState<string | null>(null);
@@ -96,7 +95,7 @@ export default function AuctionRoomPage() {
                     });
                 }
             } catch (err: unknown) {
-                setError(err instanceof Error ? err.message : "Failed to load auction");
+                setBidError(err instanceof Error ? err.message : "Failed to load auction");
             } finally {
                 setLoading(false);
             }
@@ -225,8 +224,8 @@ export default function AuctionRoomPage() {
         setIsActivating(true);
         try {
             await apiActivateAuction(id);
-        } catch (err: any) {
-            setBidError(err.message || "Failed to activate bidding");
+        } catch (err: unknown) {
+            setBidError(err instanceof Error ? err.message : "Failed to activate bidding");
         } finally {
             setIsActivating(false);
         }

@@ -43,7 +43,11 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      tab === "login" ? await login(email, password) : await register(email, password);
+      if (tab === "login") {
+        await login(email, password);
+      } else {
+        await register(email, password);
+      }
       router.push("/dashboard");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error");
