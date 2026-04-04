@@ -409,6 +409,57 @@ func (r *Repository) ListContributionsByFundAndCycle(ctx context.Context, fundID
 	return contributions, nil
 }
 
+func (r *Repository) GetFundByContractAddress(ctx context.Context, contractAddress string) (*Fund, error) {
+	if contractAddress == "" {
+		return nil, nil
+	}
+
+	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+
+	var fund Fund
+	err := r.fundsCol.FindOne(timedCtx, bson.D{{Key: "contract_address", Value: contractAddress}}).Decode(&fund)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find fund by contract address: %w", err)
+	}
+
+	return &fund, nil
+}
+
+func (r *Repository) GetContributionByAmount(ctx context.Context, fundID, userID string, amount float64) (*FundContribution, error) {
+	if fundID == "" || userID == "" {
+		return nil, nil
+	}
+
+	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+
+	const epsilon = 0.000001
+	filter := bson.D{
+		{Key: "fund_id", Value: fundID},
+		{Key: "user_id", Value: userID},
+		{Key: "amount_due", Value: bson.D{{Key: "$gte", Value: amount - epsilon}, {Key: "$lte", Value: amount + epsilon}}},
+	}
+
+	var contribution FundContribution
+	err := r.contribCol.FindOne(
+		timedCtx,
+		filter,
+		options.FindOne().SetSort(bson.D{{Key: "cycle_number", Value: -1}}),
+	).Decode(&contribution)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find contribution by amount: %w", err)
+	}
+
+	return &contribution, nil
+}
+
 func (r *Repository) ListMembersByFund(ctx context.Context, fundID string) ([]FundMember, error) {
 	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()

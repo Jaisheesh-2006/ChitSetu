@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 func getEncryptionKey() []byte {
@@ -341,6 +341,7 @@ func (r *Repository) DebitFromBalance(ctx context.Context, userID string, amount
 
 // CreditToBalance adds tokens to wallet balance (e.g., dividend payout).
 func (r *Repository) CreditToBalance(ctx context.Context, userID string, amount float64, reason string) error {
+	_ = reason // reserved for transaction audit trails
 	if userID == "" {
 		return errors.New("user id is required")
 	}

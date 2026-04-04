@@ -9,7 +9,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 
 	"github.com/Jaisheesh-2006/ChitSetu/internal/wallet"
-	"github.com/Jaisheesh-2006/ChitSetu/web3"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/web3"
 
 	"github.com/ethereum/go-ethereum/core/types"
 
