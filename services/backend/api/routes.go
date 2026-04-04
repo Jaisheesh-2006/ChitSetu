@@ -85,5 +85,7 @@ func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authSer
 	fundGroup.POST("/:id/auction/activate", auctionHandler.ActivateAuction)
 	fundGroup.POST("/:id/auction/bid", auctionHandler.PlaceBid)
 	fundGroup.GET("/:id/auction", auctionHandler.GetAuction)
+
+	router.GET("/ws/funds/:id", authMiddleware, auctionHandler.FundWebSocket)
 	return router
 }
