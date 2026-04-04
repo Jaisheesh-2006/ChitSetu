@@ -299,8 +299,18 @@ func (s *Service) ProvisionTokensInBackground(userID, contributionID string) {
 	// 2. Resolve wallet
 	walletAddr, _, err := s.walletService.GetWalletByUserID(ctx, userID)
 	if err != nil {
-		log.Printf("provisioning [%s]: wallet not found: %v", contributionID, err)
-		return
+		if strings.Contains(strings.ToLower(err.Error()), "wallet not found") {
+			autoAddr, createErr := s.walletService.CreateWallet(ctx, userID)
+			if createErr != nil {
+				log.Printf("provisioning [%s]: wallet not found and auto-provision failed: %v", contributionID, createErr)
+				return
+			}
+			walletAddr = autoAddr
+			log.Printf("provisioning [%s]: auto-provisioned wallet %s", contributionID, walletAddr)
+		} else {
+			log.Printf("provisioning [%s]: failed to resolve wallet: %v", contributionID, err)
+			return
+		}
 	}
 
 	// 3. Resolve amount (INR to Wei - 18 decimals)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
-unc main() {
+func main() {
 	loadEnv()
 	// validateRequiredAuthEnv()
 
@@ -50,13 +51,11 @@ unc main() {
 	}
 	cancelIndexes()
 	
+	var contractService *web3.ContractService
 	// 1. Core Services
 	walletRepo := wallet.NewRepository(store.Database)
 	walletService := wallet.NewService(walletRepo)
-	authService := auth.NewService(store.Database, walletService)
-
-	// 2. Web3 Stack
-	var contractService *web3.ContractService
+	authService := auth.NewService(store.Database)
 
 	web3Client, err := web3.NewClient(os.Getenv("WEB3_RPC_URL"), os.Getenv("WEB3_PRIVATE_KEY"))
 	if err != nil {
@@ -76,7 +75,7 @@ unc main() {
 	}
 
 	// 3. Application Services
-	Repo := payments.NewRepository(store.Database)
+	paymentRepo := payments.NewRepository(store.Database)
 	paymentService := payments.NewService(paymentRepo, contractService, walletService)
 	paymentHandler := payments.NewHandler(paymentService)
 	paymentCron := paymentService.StartDailyReminderCron()
@@ -84,7 +83,7 @@ unc main() {
 
 	wsManager := ws.NewManager()
 	auctionRepo := auction.NewRepository(store.Database)
-	chitfundRepo := chitfupaymentnd.NewRepository(store.Database)
+	chitfundRepo := chitfund.NewRepository(store.Database)
 	chatRepo := chat.NewRepository(store.Database)
 
 	// Broadcast participant count only for explicit auction-room joins/leaves.
@@ -112,11 +111,11 @@ unc main() {
 	// 4. Setup Router
 	router := api.SetupRouter(
 		store,
-		paymentHandler,
 		auctionHandler,
-		chitfundHandler,
-		chatHandler,
 		authService,
+		chitfundHandler,
+		paymentHandler,
+		chatHandler,
 		walletService,
 		web3Handlers,
 	)

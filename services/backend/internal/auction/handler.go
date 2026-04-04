@@ -159,8 +159,6 @@ func (h *Handler) respondServiceError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrInvalidIncrement):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case errors.Is(err, ErrDiscountCapExceeded):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrConsecutiveBid):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:

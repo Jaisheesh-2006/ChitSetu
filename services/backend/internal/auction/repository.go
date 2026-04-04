@@ -233,7 +233,7 @@ func (r *Repository) StartAuction(ctx context.Context, fundID, requesterUserID s
 	}
 	defer txnSession.EndSession(timedCtx)
 
-	_, err = txnSession.WithTransaction(timedCtx, func(sc mongo.SessionContext) (interface{}, error) {
+	_, err = txnSession.WithTransaction(timedCtx, func(sc context.Context) (interface{}, error) {
 		var fund fundProjection
 		err := r.fundsCol.FindOne(
 			sc,
@@ -336,7 +336,7 @@ func (r *Repository) PlaceIncrementBid(ctx context.Context, fundID, userID strin
 	}
 	defer txnSession.EndSession(timedCtx)
 
-	_, err = txnSession.WithTransaction(timedCtx, func(sc mongo.SessionContext) (interface{}, error) {
+	_, err = txnSession.WithTransaction(timedCtx, func(sc context.Context) (interface{}, error) {
 		var live AuctionSession
 		err := r.auctionSessionsCol.FindOne(sc, bson.M{"fund_id": fundID, "status": "live"}).Decode(&live)
 		if err != nil {
@@ -613,7 +613,7 @@ func (r *Repository) FinalizeAuction(ctx context.Context, fundID string, cycleNu
 	}
 	defer txnSession.EndSession(timedCtx)
 
-	_, err = txnSession.WithTransaction(timedCtx, func(sc mongo.SessionContext) (interface{}, error) {
+	_, err = txnSession.WithTransaction(timedCtx, func(sc context.Context) (interface{}, error) {
 		var live AuctionSession
 		err := r.auctionSessionsCol.FindOne(
 			sc,
