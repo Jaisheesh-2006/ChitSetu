@@ -1,8 +1,10 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+// License-Identifier: MIT
+pragma solidity ^0.8.28;
+
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 
 contract ChitFund {
     using SafeERC20 for IERC20;
@@ -13,6 +15,8 @@ contract ChitFund {
     uint public contributionAmount;
     uint public currentRound;
     uint public totalPool;
+    // uint public reservePool; // Removed logic for optional dividends
+    // bool public dividendEnabled; // Removed logic for optional dividends
 
     address public manager;
     string public fundName;
@@ -70,7 +74,7 @@ contract ChitFund {
 
         // The manager (backend) triggers the token transfer from the member's wallet
         token.safeTransferFrom(
-            member, 
+            member, // <--- PULL FROM THE MEMBER
             address(this),
             contributionAmount
         );
