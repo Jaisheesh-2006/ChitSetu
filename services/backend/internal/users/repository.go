@@ -34,8 +34,10 @@ type ProfileFields struct {
 }
 
 type KYCFields struct {
-	Status     string     `bson:"status,omitempty" json:"status,omitempty"`
-	VerifiedAt *time.Time `bson:"verified_at,omitempty" json:"verified_at,omitempty"`
+	Status      string     `bson:"status,omitempty" json:"status,omitempty"`
+	VerifiedAt  *time.Time `bson:"verified_at,omitempty" json:"verified_at,omitempty"`
+	BankAccount string     `bson:"bank_account,omitempty" json:"-"`
+	IFSCCode    string     `bson:"ifsc_code,omitempty" json:"-"`
 }
 
 type CreditFields struct {
@@ -305,7 +307,7 @@ func (r *Repository) StorePANVerified(ctx context.Context, userID string, cibilS
 	return r.syncProfileKYCStatus(ctx, userID, "pan_verified")
 }
 
-func (r *Repository) StoreSyntheticHistory(ctx context.Context, userID string, history interface{}) error {
+func (r *Repository) StoreSyntheticHistory(ctx context.Context, userID string, history interface{}, bankAccount string, ifscCode string) error {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
@@ -314,6 +316,8 @@ func (r *Repository) StoreSyntheticHistory(ctx context.Context, userID string, h
 		bson.D{{Key: "_id", Value: userID}, {Key: "kyc.status", Value: "pan_verified"}},
 		bson.D{{Key: "$set", Value: bson.D{
 			{Key: "kyc.status", Value: "credit_fetched"},
+			{Key: "kyc.bank_account", Value: bankAccount},
+			{Key: "kyc.ifsc_code", Value: ifscCode},
 			{Key: "credit.synthetic_history", Value: history},
 		}}},
 	)

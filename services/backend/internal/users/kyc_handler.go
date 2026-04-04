@@ -293,7 +293,7 @@ func (h *Handler) FetchHistory(c *gin.Context) {
 		return
 	}
 
-	if err := h.repository.StoreSyntheticHistory(c.Request.Context(), userID, history); err != nil {
+	if err := h.repository.StoreSyntheticHistory(c.Request.Context(), userID, history, account, ifsc); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to store transaction history"})
 		return
 	}
