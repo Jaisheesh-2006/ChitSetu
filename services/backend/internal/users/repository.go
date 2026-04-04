@@ -358,3 +358,105 @@ func (r *Repository) GetUserCredit(ctx context.Context, userID string) (*CreditF
 
 	return user.Credit, nil
 }
+
+
+func (r *Repository) ListActiveMembershipsByUser(ctx context.Context, userID string) ([]UserFundMembership, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	cursor, err := r.membersCol.Find(
+		ctx,
+		bson.D{{Key: "user_id", Value: userID}, {Key: "status", Value: "active"}},
+		options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find active memberships: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	memberships := make([]UserFundMembership, 0)
+	for cursor.Next(ctx) {
+		var membership UserFundMembership
+		if err := cursor.Decode(&membership); err != nil {
+			return nil, fmt.Errorf("decode active membership: %w", err)
+		}
+		memberships = append(memberships, membership)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active memberships: %w", err)
+	}
+
+	return memberships, nil
+}
+
+func (r *Repository) GetFundByID(ctx context.Context, fundID string) (*UserFund, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	var fund UserFund
+	err := r.fundsCol.FindOne(
+		ctx,
+		bson.D{{Key: "_id", Value: fundID}},
+		options.FindOne().SetProjection(bson.D{
+			{Key: "name", Value: 1},
+			{Key: "total_amount", Value: 1},
+			{Key: "monthly_contribution", Value: 1},
+			{Key: "duration_months", Value: 1},
+			{Key: "status", Value: 1},
+			{Key: "start_date", Value: 1},
+			{Key: "creator_id", Value: 1},
+		}),
+	).Decode(&fund)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find fund by id: %w", err)
+	}
+
+	return &fund, nil
+}
+
+func (r *Repository) CountActiveMembersByFund(ctx context.Context, fundID string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	count, err := r.membersCol.CountDocuments(
+		ctx,
+		bson.D{{Key: "fund_id", Value: fundID}, {Key: "status", Value: "active"}},
+	)
+	if err != nil {
+		return 0, fmt.Errorf("count active members by fund: %w", err)
+	}
+
+	return count, nil
+}
+
+func (r *Repository) ListContributionsByUser(ctx context.Context, userID string) ([]Contribution, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
+	cursor, err := r.contribCol.Find(
+		ctx,
+		bson.D{{Key: "user_id", Value: userID}},
+		options.Find().SetSort(bson.D{{Key: "due_date", Value: 1}}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("find contributions by user: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	contributions := make([]Contribution, 0)
+	for cursor.Next(ctx) {
+		var contribution Contribution
+		if err := cursor.Decode(&contribution); err != nil {
+			return nil, fmt.Errorf("decode contribution by user: %w", err)
+		}
+		contributions = append(contributions, contribution)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("iterate contributions by user: %w", err)
+	}
+
+	return contributions, nil
+}
