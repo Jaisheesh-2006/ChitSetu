@@ -1,342 +1,438 @@
-package payments
+package auth
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/crypto/argon2"
 )
 
+var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
+
 type Service struct {
-	repo *Repository
+	usersCol   *mongo.Collection
+	sessionCol *mongo.Collection
+
+	jwtSecret       []byte
+	accessTTL       time.Duration
+	refreshTTL      time.Duration
+	resetTokenCol   *mongo.Collection
+	appBaseURL      string
+	resendAPIKey    string
+	resendFromEmail string
+	httpClient      *http.Client
 }
 
-type VerifyInput struct {
-	SessionID         string
-	RazorpayOrderID   string
-	RazorpayPaymentID string
-	RazorpaySignature string
+type passwordResetTokenDocument struct {
+	ID        string    `bson:"_id"`
+	UserID    string    `bson:"user_id"`
+	TokenHash string    `bson:"token_hash"`
+	ExpiresAt time.Time `bson:"expires_at"`
+	CreatedAt time.Time `bson:"created_at"`
 }
 
-func NewService(repo *Repository) *Service {
+type userDocument struct {
+	ID               string    `bson:"_id"`
+	Email            string    `bson:"email"`
+	PasswordHash     string    `bson:"password_hash"`
+	GoogleSub        string    `bson:"google_sub,omitempty"`
+	AuthProvider     string    `bson:"auth_provider"`
+	ProfileCompleted bool      `bson:"profile_completed"`
+	CreatedAt        time.Time `bson:"created_at"`
+	UpdatedAt        time.Time `bson:"updated_at"`
+}
+
+type authSessionDocument struct {
+	ID               string     `bson:"_id"`
+	UserID           string     `bson:"user_id"`
+	RefreshTokenHash string     `bson:"refresh_token_hash"`
+	ExpiresAt        time.Time  `bson:"expires_at"`
+	RevokedAt        *time.Time `bson:"revoked_at,omitempty"`
+	CreatedAt        time.Time  `bson:"created_at"`
+}
+
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresInSec int64  `json:"expires_in_sec"`
+}
+
+func NewService(db *mongo.Database) *Service {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev-insecure-jwt-secret-change-me"
+	}
+
 	baseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 	if baseURL == "" {
-		baseURL = "https://yourapp.com"
+		baseURL = "http://localhost:3000"
 	}
+
 	return &Service{
-		repo:                 repo,
-		httpClient:           &http.Client{Timeout: 15 * time.Second},
-		razorpayKeyID:        strings.TrimSpace(os.Getenv("RAZORPAY_KEY_ID")),
-		razorpayKeySecret:    strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
-		appBaseURL:           strings.TrimRight(baseURL, "/"),
-		resendAPIKey:         strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		resendFromEmail:      strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
-		defaultReminderEmail: strings.TrimSpace(os.Getenv("PAYMENT_REMINDER_FALLBACK_EMAIL")),
+		usersCol:        db.Collection("users"),
+		sessionCol:      db.Collection("auth_sessions"),
+		resetTokenCol:   db.Collection("password_reset_tokens"),
+		jwtSecret:       []byte(secret),
+		accessTTL:       15 * time.Minute,
+		refreshTTL:      7 * 24 * time.Hour,
+		appBaseURL:      strings.TrimRight(baseURL, "/"),
+		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		resendFromEmail: strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
+		httpClient:      &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (s *Service) StartDailyReminderCron() *cron.Cron {
-	c := cron.New(cron.WithLocation(time.Local))
-	_, err := c.AddFunc("0 9 * * *", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		if err := s.RunDailyReminderJob(ctx); err != nil {
-			log.Printf("payment reminder cron error: %v", err)
-		}
+func (s *Service) JWTSecret() []byte {
+	out := make([]byte, len(s.jwtSecret))
+	copy(out, s.jwtSecret)
+	return out
+}
+
+func (s *Service) Register(ctx context.Context, email, password string) (*TokenPair, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if err := validateCredentials(email, password); err != nil {
+		return nil, err
+	}
+
+	hash, err := hashPassword(password)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	userID := uuid.NewString()
+	_, err = s.usersCol.InsertOne(ctx, userDocument{
+		ID:               userID,
+		Email:            email,
+		PasswordHash:     hash,
+		AuthProvider:     "email",
+		ProfileCompleted: false,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	})
 	if err != nil {
-		log.Printf("failed to register payment reminder cron: %v", err)
-		return c
+		if isDuplicateKeyError(err) {
+			return nil, errors.New("user already exists")
+		}
+		return nil, fmt.Errorf("create user: %w", err)
 	}
-	c.Start()
-	return c
+
+	return s.IssueTokenPair(ctx, userID)
+
 }
 
-func (s *Service) RunDailyReminderJob(ctx context.Context) error {
-	if err := s.repo.EnsureContributionsForActiveFunds(ctx); err != nil {
-		return err
-	}
-	if err := s.repo.ExpireSessions(ctx); err != nil {
-		return err
+func (s *Service) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if !emailRegex.MatchString(email) {
+		return nil, errors.New("invalid email format")
 	}
 
-
-	activeSession, err := s.repo.GetActiveSessionForContribution(ctx, contribID)
+	var user userDocument
+	err := s.usersCol.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
-		return "", err
-	}
-	if activeSession != nil {
-		return activeSession.ID, nil
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.New("invalid email or password")
+		}
+		return nil, fmt.Errorf("find user: %w", err)
 	}
 
-	// Create new session valid for 2 hours
-	newSession, err := s.repo.CreatePaymentSession(ctx, contribID, userID, amountDue, time.Now().Add(2*time.Hour))
+	ok, err := verifyPassword(password, user.PasswordHash)
 	if err != nil {
-		return "", fmt.Errorf("failed to create payment session: %w", err)
+		return nil, fmt.Errorf("verify password: %w", err)
+	}
+	if !ok {
+		return nil, errors.New("invalid email or password")
 	}
 
-	return newSession.ID, nil
+	return s.IssueTokenPair(ctx, user.ID)
 }
 
-func (s *Service) GetSessionDetails(ctx context.Context, userID, sessionID string) (*SessionDetails, error) {
-	existing, err := s.repo.GetActiveSessionForContribution(ctx, contributionID)
+func (s *Service) RequestPasswordReset(ctx context.Context, email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	var user userDocument
+	err := s.usersCol.FindOne(ctx, bson.M{"email": email}).Decode(&user)
 	if err != nil {
-		return "", err
-	}
-	if existing != nil {
-		return existing.ID, nil
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			// Don't reveal account existence, but also don't return a token for non-users
+			return "", nil
+		}
+		return "", fmt.Errorf("find user: %w", err)
 	}
 
-	expiresAt := time.Now().Add(15 * time.Minute)
-	session, err := s.repo.CreatePaymentSession(ctx, contributionID, userID, amountDue, expiresAt)
+	token, err := randomToken(32)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("generate reset token: %w", err)
 	}
-	return session.ID, nil
 
-func (s *Service) GetSessionDetails(ctx context.Context, userID, sessionID string) (map[string]interface{}, error) {
-
-	session, err := s.repo.GetSessionForUser(ctx, sessionID, userID)
+	_, err = s.resetTokenCol.UpdateOne(
+		ctx,
+		bson.M{"user_id": user.ID},
+		bson.M{
+			"$set": bson.M{
+				"token_hash": tokenHash(token),
+				"expires_at": time.Now().Add(1 * time.Hour),
+				"created_at": time.Now(),
+			},
+		},
+		options.Update().SetUpsert(true),
+	)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("store reset token: %w", err)
 	}
 
-	if session.ContributionSt == "paid" {
-		return nil, fmt.Errorf("contribution already paid")
-	}
-	if session.ExpiresAt.Before(time.Now()) {
-		_ = s.repo.ExpireSessions(ctx)
-		return nil, fmt.Errorf("session expired")
-	}
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", s.appBaseURL, token)
+	log.Printf("Password reset link for %s: %s", email, resetLink)
 
-	return &SessionDetails{
-		AmountDue:   session.AmountDue,
-		FundID:      session.FundID,
-		CycleNumber: session.CycleNumber,
-		DueDate:     session.DueDate,
-	}, nil
+	// if s.resendAPIKey != "" && s.resendFromEmail != "" {
+	// 	_ = s.sendPasswordResetEmail(email, resetLink)
+	// }
+
+	return token, nil
 }
 
-func (s *Service) CreateOrder(ctx context.Context, userID, sessionID string) (*CreateOrderResult, error) {
-	if s.razorpayKeyID == "" || s.razorpayKeySecret == "" {
-		return nil, fmt.Errorf("razorpay keys are not configured")
+func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) error {
+	if len(newPassword) < 8 {
+		return errors.New("password must be at least 8 characters")
 	}
 
+	hash := tokenHash(token)
+	var resetDoc passwordResetTokenDocument
+	err := s.resetTokenCol.FindOne(ctx, bson.M{
+		"token_hash": hash,
+		"expires_at": bson.M{"$gt": time.Now()},
+	}).Decode(&resetDoc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return errors.New("invalid or expired reset token")
+		}
+		return fmt.Errorf("find reset token: %w", err)
+	}
 
+	newHash, err := hashPassword(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
 
-	return map[string]interface{}{
-		"session_id":      session.ID,
-		"fund_id":         session.FundID,
-		"cycle_number":    session.CycleNumber,
-		"amount_due":      session.AmountDue,
-		"status":          session.Status,
-		"expires_at":      session.ExpiresAt,
-		"due_date":        session.DueDate,
-		"contribution_id": session.ContributionID,
-	}, nil
+	_, err = s.usersCol.UpdateOne(ctx, bson.M{"_id": resetDoc.UserID}, bson.M{
+		"$set": bson.M{"password_hash": newHash, "updated_at": time.Now()},
+	})
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+
+	_, _ = s.resetTokenCol.DeleteOne(ctx, bson.M{"_id": resetDoc.ID})
+
+	return nil
 }
 
-func (s *Service) CreateOrder(ctx context.Context, userID, sessionID string) (map[string]interface{}, error) {
-
-	session, err := s.repo.GetSessionForUser(ctx, sessionID, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	if session.ContributionSt == "paid" {
-		return nil, fmt.Errorf("contribution already paid")
-	}
-	if session.ExpiresAt.Before(time.Now()) {
-		_ = s.repo.ExpireSessions(ctx)
-		return nil, fmt.Errorf("session expired")
-	}
-	if session.Status != "created" {
-		return nil, fmt.Errorf("session is not payable")
-	}
-
-	amountPaise := int64(math.Round(session.AmountDue * 100))
-	payload := map[string]any{
-		"amount":   amountPaise,
-		"currency": "INR",
-		"receipt":  session.ID,
-	}
-
-	orderID, err := s.createRazorpayOrder(ctx, payload)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.UpsertOrderForSession(ctx, session.ID, orderID); err != nil {
-		return nil, err
-	}
-
-	return &CreateOrderResult{OrderID: orderID, Amount: amountPaise, KeyID: s.razorpayKeyID}, nil
-}
-
-func (s *Service) VerifyPayment(ctx context.Context, userID string, input VerifyInput) (bool, error) {
-
-	if strings.TrimSpace(input.SessionID) == "" ||
-		strings.TrimSpace(input.RazorpayOrderID) == "" ||
-		strings.TrimSpace(input.RazorpayPaymentID) == "" ||
-		strings.TrimSpace(input.RazorpaySignature) == "" {
-		return false, fmt.Errorf("missing verify fields")
-	}
-
-	expectedOrderID, err := s.repo.GetOrderForSession(ctx, input.SessionID)
-	if err != nil {
-		return false, err
-	}
-	if expectedOrderID != input.RazorpayOrderID {
-		return false, fmt.Errorf("order mismatch")
-	}
-
-	if !s.verifyRazorpaySignature(input.RazorpayOrderID, input.RazorpayPaymentID, input.RazorpaySignature) {
-		return false, fmt.Errorf("invalid signature")
-	}
-
-	// DB UPDATE
-	alreadyPaid, contribution, err := s.repo.MarkPaymentVerified(ctx, userID, input.SessionID, input.RazorpayPaymentID)
-	if err != nil {
-		return false, err
-	}
-
-	if alreadyPaid {
-		log.Println("already processed")
-		return true, nil
-	}
-
-	if contribution == nil {
-		return false, nil
-	}
-
-	return true, nil
-}
-func (s *Service) createRazorpayOrder(ctx context.Context, payload map[string]any) (string, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal razorpay order payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.razorpay.com/v1/orders", bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("create razorpay request: %w", err)
-	}
-	req.SetBasicAuth(s.razorpayKeyID, s.razorpayKeySecret)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("call razorpay orders api: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("razorpay orders api returned status %d", resp.StatusCode)
-	}
-
-	var parsed struct {
-		ID string `json:"id"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("decode razorpay order response: %w", err)
-	}
-	if strings.TrimSpace(parsed.ID) == "" {
-		return "", fmt.Errorf("razorpay order id missing")
-	}
-
-	return parsed.ID, nil
-}
-
-func (s *Service) verifyRazorpaySignature(orderID, paymentID, signature string) bool {
-	mac := hmac.New(sha256.New, []byte(s.razorpayKeySecret))
-	mac.Write([]byte(orderID + "|" + paymentID))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
-}
-
-func (s *Service) sendReminderEmail(ctx context.Context, toEmail, paymentLink string) error {
-	recipient := strings.TrimSpace(toEmail)
-	if recipient == "" {
-		recipient = s.defaultReminderEmail
-	}
-	if recipient == "" {
-		return nil
-	}
-	if s.resendAPIKey == "" || s.resendFromEmail == "" {
-		log.Printf("resend not configured, reminder link for %s: %s", recipient, paymentLink)
-		return nil
-	}
-
+func (s *Service) sendPasswordResetEmail(toEmail, resetLink string) error {
 	payload := map[string]any{
 		"from":    s.resendFromEmail,
-		"to":      []string{recipient},
-		"subject": "Contribution Payment Reminder",
-		"html":    fmt.Sprintf("<p>Your contribution payment is due soon.</p><p><a href=\"%s\">Pay Now</a></p>", paymentLink),
+		"to":      []string{toEmail},
+		"subject": "Reset Your ChitSetu Password",
+		"html":    fmt.Sprintf("<p>You requested a password reset.</p><p>Click the link below to set a new password:</p><p><a href=\"%s\">Reset Password</a></p><p>This link will expire in 1 hour.</p>", resetLink),
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal resend payload: %w", err)
-	}
+	body, _ := json.Marshal(payload)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create resend request: %w", err)
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+s.resendAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("call resend api: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("resend api returned status %d", resp.StatusCode)
-	}
 	return nil
+}
 
-	if session.Status != "created" {
-		return nil, fmt.Errorf("session is not payable")
-	}
-	if session.ExpiresAt.Before(time.Now()) {
-		return nil, fmt.Errorf("session expired")
-	}
-
-	orderID := "order_" + uuid.NewString()
-	if err := s.repo.UpsertOrderForSession(ctx, sessionID, orderID); err != nil {
-		return nil, err
+func (s *Service) Refresh(ctx context.Context, refreshToken string) (*TokenPair, error) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil, errors.New("refresh token is required")
 	}
 
-	amountPaise := int64(session.AmountDue * 100)
-	return map[string]interface{}{
-		"order_id":     orderID,
-		"session_id":   sessionID,
-		"amount_paise": amountPaise,
-		"currency":     "INR",
+	hash := tokenHash(refreshToken)
+
+	var session authSessionDocument
+	err := s.sessionCol.FindOne(ctx, bson.M{
+		"refresh_token_hash": hash,
+		"revoked_at":         bson.M{"$exists": false},
+		"expires_at":         bson.M{"$gt": time.Now()},
+	}).Decode(&session)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, errors.New("invalid refresh token")
+		}
+		return nil, fmt.Errorf("lookup session: %w", err)
+	}
+
+	now := time.Now()
+	if _, err := s.sessionCol.UpdateOne(ctx, bson.M{"_id": session.ID}, bson.M{"$set": bson.M{"revoked_at": now}}); err != nil {
+		return nil, fmt.Errorf("revoke old session: %w", err)
+	}
+
+	return s.IssueTokenPair(ctx, session.UserID)
+}
+
+func (s *Service) IssueTokenPair(ctx context.Context, userID string) (*TokenPair, error) {
+	now := time.Now()
+	accessExp := now.Add(s.accessTTL)
+
+	claims := jwt.RegisteredClaims{
+		Subject:   userID,
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(accessExp),
+		Issuer:    "chitsetu-backend",
+	}
+
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	accessToken, err := jwtToken.SignedString(s.jwtSecret)
+	if err != nil {
+		return nil, fmt.Errorf("sign access token: %w", err)
+	}
+
+	rawRefresh, err := randomToken(48)
+	if err != nil {
+		return nil, fmt.Errorf("generate refresh token: %w", err)
+	}
+
+	_, err = s.sessionCol.InsertOne(ctx, authSessionDocument{
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		RefreshTokenHash: tokenHash(rawRefresh),
+		ExpiresAt:        now.Add(s.refreshTTL),
+		CreatedAt:        now,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("persist refresh session: %w", err)
+	}
+
+	return &TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: rawRefresh,
+		TokenType:    "Bearer",
+		ExpiresInSec: int64(s.accessTTL.Seconds()),
 	}, nil
 }
 
-func (s *Service) VerifyPayment(ctx context.Context, userID string, input VerifyInput) (bool, error) {
-	if strings.TrimSpace(input.SessionID) == "" {
-		return false, fmt.Errorf("session_id is required")
+func validateCredentials(email, password string) error {
+	if !emailRegex.MatchString(email) {
+		return errors.New("invalid email format")
 	}
-	if strings.TrimSpace(input.RazorpayOrderID) == "" || strings.TrimSpace(input.RazorpayPaymentID) == "" || strings.TrimSpace(input.RazorpaySignature) == "" {
-		return false, fmt.Errorf("razorpay verification fields are required")
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+	return nil
+}
+
+func hashPassword(password string) (string, error) {
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
 	}
 
-	storedOrderID, err := s.repo.GetOrderForSession(ctx, input.SessionID)
-	if err != nil {
-		return false, err
-	}
-	if storedOrderID != input.RazorpayOrderID {
-		return false, fmt.Errorf("order mismatch for session")
+	iterations := uint32(2)
+	memory := uint32(64 * 1024)
+	parallelism := uint8(2)
+	keyLength := uint32(32)
+
+	hash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, keyLength)
+
+	return fmt.Sprintf(
+		"$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
+		memory,
+		iterations,
+		parallelism,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	), nil
+}
+
+func verifyPassword(password, encodedHash string) (bool, error) {
+	parts := strings.Split(encodedHash, "$")
+	if len(parts) != 6 {
+		return false, errors.New("invalid encoded hash format")
 	}
 
-	alreadyPaid, _, err := s.repo.MarkPaymentVerified(ctx, userID, input.SessionID, input.RazorpayPaymentID)
-	if err != nil {
-		return false, err
+	var memory uint32
+	var iterations uint32
+	var parallelism uint8
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism); err != nil {
+		return false, fmt.Errorf("parse hash params: %w", err)
 	}
-	return alreadyPaid, nil
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false, fmt.Errorf("decode salt: %w", err)
+	}
+
+	decodedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false, fmt.Errorf("decode hash: %w", err)
+	}
+
+	recomputed := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(decodedHash)))
+	return subtleCompare(decodedHash, recomputed), nil
+}
+
+func subtleCompare(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var result byte
+	for i := range a {
+		result |= a[i] ^ b[i]
+	}
+	return result == 0
+}
+
+func randomToken(size int) (string, error) {
+	b := make([]byte, size)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func tokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func isDuplicateKeyError(err error) bool {
+	var writeErr mongo.WriteException
+	if errors.As(err, &writeErr) {
+		for _, we := range writeErr.WriteErrors {
+			if we.Code == 11000 {
+				return true
+			}
+		}
+	}
+	var cmdErr mongo.CommandError
+	if errors.As(err, &cmdErr) {
+		return cmdErr.Code == 11000
+	}
+	return false
 }
