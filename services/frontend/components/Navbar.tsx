@@ -6,8 +6,16 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useThemeMode } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
-// import { getWalletInfo } from "@/services/api";
+import { getWalletInfo } from "@/services/api";
 import GoogleTranslate from "@/components/GoogleTranslate";
+import {
+  Sun,
+  Moon,
+  Menu,
+  X,
+  LayoutDashboard,
+  Layers,
+} from "lucide-react";
 
 export default function Navbar() {
   const { mode, toggleMode } = useThemeMode();
@@ -15,42 +23,42 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  // const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
-  // useEffect(() => {
-  //   if (!isAuthenticated) {
-  //     setWalletBalance(null);
-  //     return;
-  //   }
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setWalletBalance(null);
+      return;
+    }
 
-  //   let disposed = false;
-  //   const loadWalletBalance = async () => {
-  //     try {
-  //       const wallet = await getWalletInfo();
-  //       if (!disposed) {
-  //         setWalletBalance(wallet.balance);
-  //       }
-  //     } catch {
-  //       if (!disposed) {
-  //         setWalletBalance(null);
-  //       }
-  //     }
-  //   };
+    let disposed = false;
+    const loadWalletBalance = async () => {
+      try {
+        const wallet = await getWalletInfo();
+        if (!disposed) {
+          setWalletBalance(wallet.balance);
+        }
+      } catch {
+        if (!disposed) {
+          setWalletBalance(null);
+        }
+      }
+    };
 
-  //   void loadWalletBalance();
-  //   const interval = setInterval(() => {
-  //     void loadWalletBalance();
-  //   }, 15000);
+    void loadWalletBalance();
+    const interval = setInterval(() => {
+      void loadWalletBalance();
+    }, 15000);
 
-  //   return () => {
-  //     disposed = true;
-  //     clearInterval(interval);
-  //   };
-  // }, [isAuthenticated]);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, [isAuthenticated]);
 
-  // const formattedWalletBalance = walletBalance === null
-  //   ? "--"
-  //   : walletBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  const formattedWalletBalance = walletBalance === null
+    ? "--"
+    : walletBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -60,8 +68,8 @@ export default function Navbar() {
   }, []);
 
   const links = [
-    { label: "Dashboard", href: "/dashboard", icon: "◻" },
-    { label: "Funds", href: "/funds", icon: "◈" },
+    { label: "Dashboard", href: "/dashboard", icon: <LayoutDashboard size={14} /> },
+    { label: "Funds", href: "/funds", icon: <Layers size={14} /> },
   ];
 
   return (
@@ -110,12 +118,15 @@ export default function Navbar() {
                   transition: "all 0.2s",
                 }}>
                   {active && <motion.div layoutId="nav-indicator" style={{ position: "absolute", bottom: -1, left: 14, right: 14, height: 2, background: "var(--color-accent)", borderRadius: 1 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} />}
-                  {l.label}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {l.icon}
+                    {l.label}
+                  </span>
                 </Link>
               );
             })}
 
-            {/* Wallet balance display - disabled for now
+            {/* Wallet balance display - disabled for now */}
             {isAuthenticated && (
               <div
                 style={{
@@ -134,7 +145,7 @@ export default function Navbar() {
               >
                 {formattedWalletBalance} CHIT
               </div>
-            )} */}
+            )}
 
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.04)", margin: "0 8px" }} />
 
@@ -152,7 +163,7 @@ export default function Navbar() {
                 cursor: "pointer", fontSize: 15, transition: "all 0.2s",
               }}
             >
-              {mode === "dark" ? "☀" : "🌙"}
+              {mode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </motion.button>
 
             {isAuthenticated && (
@@ -197,7 +208,7 @@ export default function Navbar() {
                 cursor: "pointer", fontSize: 15,
               }}
             >
-              {mode === "dark" ? "☀" : "🌙"}
+              {mode === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </motion.button>
             <motion.button
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -212,7 +223,7 @@ export default function Navbar() {
                 cursor: "pointer", fontSize: 16,
               }}
             >
-              {mobileOpen ? "✕" : "☰"}
+              {mobileOpen ? <X size={18} /> : <Menu size={18} />}
             </motion.button>
           </div>
         )}
@@ -235,11 +246,14 @@ export default function Navbar() {
             {isAuthenticated && links.map((l) => (
               <Link key={l.href} href={l.href} onClick={() => setMobileOpen(false)}
                 style={{ display: "block", fontSize: 13, fontWeight: 500, color: pathname.startsWith(l.href) ? "var(--color-accent)" : "var(--color-text-secondary)", padding: "10px 0", textDecoration: "none", borderBottom: "1px solid var(--color-border)" }}>
-                {l.label}
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {l.icon}
+                  {l.label}
+                </span>
               </Link>
             ))}
             
-            {/* Wallet balance display - disabled for now
+            {/* Wallet balance display - disabled for now */}
             {isAuthenticated && (
               <div
                 style={{
@@ -256,7 +270,7 @@ export default function Navbar() {
               >
                 Wallet Balance: {formattedWalletBalance} CHIT
               </div>
-            )} */}
+            )}
             
             {isAuthenticated && (
               <button onClick={() => { logout(); setMobileOpen(false); }}

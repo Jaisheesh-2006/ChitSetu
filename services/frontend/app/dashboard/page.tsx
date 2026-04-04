@@ -13,6 +13,16 @@ import StatCard from "@/components/ui/StatCard";
 import TrustScoreRing from "@/components/ui/TrustScoreRing";
 import { useAuth } from "@/hooks/useAuth";
 import {
+  BarChart3,
+  CircleDollarSign,
+  ShieldCheck,
+  Wallet,
+  Copy,
+  Building2,
+  ChevronRight,
+  ExternalLink,
+} from "lucide-react";
+import {
   upsertProfile,
   getProfile,
   createFund,
@@ -376,7 +386,7 @@ function Overview() {
           label="Active Funds"
           value={funds.length}
           delay={0.05}
-          icon={<span>📊</span>}
+          icon={<BarChart3 size={16} />}
           accent="#60a5fa"
         />
         <StatCard
@@ -384,7 +394,7 @@ function Overview() {
           value={contribs.length}
           suffix="paid"
           delay={0.1}
-          icon={<span>💰</span>}
+          icon={<CircleDollarSign size={16} />}
           accent="#f59e0b"
         />
         {risk ? (
@@ -452,7 +462,7 @@ function Overview() {
             label="Trust Score"
             value="—"
             delay={0.15}
-            icon={<span>🛡️</span>}
+            icon={<ShieldCheck size={16} />}
             accent="#22c55e"
           />
         )}
@@ -464,7 +474,7 @@ function Overview() {
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                <span style={{ fontSize: 14 }}>👛</span>
+                <Wallet size={14} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>Your Custodial Wallet</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--color-bg-subtle)", padding: "8px 12px", borderRadius: 8, boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)" }}>
@@ -472,16 +482,47 @@ function Overview() {
                   {wallet?.address || "Loading..."}
                 </code>
                 {wallet?.address && (
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(wallet.address);
-                      alert("Address copied to clipboard!");
-                    }}
-                    style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6, padding: 4 }}
-                    title="Copy Address"
-                  >
-                    📋
-                  </button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(wallet.address);
+                        alert("Address copied to clipboard!");
+                      }}
+                      style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6, padding: 4, color: "var(--color-text)" }}
+                      title="Copy Address"
+                    >
+                      <Copy size={14} />
+                    </button>
+                    <a
+                      href={`https://amoy.polygonscan.com/address/${wallet.address}#tokentxns`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--color-accent)",
+                        textDecoration: "none",
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        background: "rgba(249,115,22,0.1)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        transition: "all 0.2s",
+                        border: "1px solid rgba(249,115,22,0.2)"
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "rgba(249,115,22,0.2)";
+                        e.currentTarget.style.borderColor = "rgba(249,115,22,0.4)";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = "rgba(249,115,22,0.1)";
+                        e.currentTarget.style.borderColor = "rgba(249,115,22,0.2)";
+                      }}
+                    >
+                      View Ledger <ExternalLink size={10} />
+                    </a>
+                  </div>
                 )}
               </div>
             </div>
@@ -489,7 +530,7 @@ function Overview() {
             <div style={{ textAlign: "right" }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>Token Balance</span>
               <p style={{ fontSize: 28, fontWeight: 800, margin: "4px 0 0", color: "var(--color-text)", letterSpacing: -1 }}>
-                {wallet ? wallet.balance.toLocaleString() : "—"} 
+                {wallet ? wallet.balance.toLocaleString() : "—"}
                 <span style={{ fontSize: 14, color: "var(--color-accent)", marginLeft: 6, fontWeight: 700 }}>CHIT</span>
               </p>
             </div>
@@ -547,7 +588,7 @@ function Overview() {
               transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
               style={{ fontSize: 32, display: "inline-block" }}
             >
-              🏦
+              <Building2 size={32} />
             </motion.span>
             <p
               style={{
@@ -575,7 +616,9 @@ function Overview() {
                 window.location.href = "/funds";
               }}
             >
-              Browse Funds →
+              <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                Browse Funds <ChevronRight size={14} />
+              </span>
             </AnimatedButton>
           </motion.div>
         ) : (
@@ -638,8 +681,8 @@ function Overview() {
               const blockchainStatus = contribution.blockchain_status;
               const status =
                 c.status === "paid" &&
-                blockchainStatus &&
-                blockchainStatus !== "confirmed"
+                  blockchainStatus &&
+                  blockchainStatus !== "confirmed"
                   ? blockchainStatus
                   : c.status;
               const style =
@@ -652,9 +695,9 @@ function Overview() {
                       : status === "depositing to pool"
                         ? { color: "#f472b6", bg: "rgba(244,114,182,0.08)" }
                         : {
-                            color: "var(--color-text-secondary)",
-                            bg: "var(--color-bg-subtle)",
-                          };
+                          color: "var(--color-text-secondary)",
+                          bg: "var(--color-bg-subtle)",
+                        };
 
               return (
                 <GlassCard
@@ -1135,6 +1178,7 @@ function Profile({ onUpdate }: { onUpdate: () => void }) {
                 onChange={up("phone_number")}
                 required
                 disabled={!edit}
+
                 placeholder="+91 9876543210"
               />
               <Input

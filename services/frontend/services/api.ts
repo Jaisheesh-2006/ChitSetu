@@ -255,6 +255,7 @@ export interface FundDetails {
   duration_months: number;
   max_members: number;
   status: string;
+  contract_address?: string;
   start_date: string;
   creator_id: string;
   current_member_count: number;

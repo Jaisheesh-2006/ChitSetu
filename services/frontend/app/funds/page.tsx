@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { Coins, ChevronRight } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import ChitFundCard from "@/components/ChitFundCard";
 import AnimatedButton from "@/components/ui/AnimatedButton";
@@ -94,10 +95,14 @@ export default function FundsPage() {
           <div style={{ fontSize: 13, color: "var(--color-danger)", background: "var(--color-danger-light)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: 6, padding: "10px 14px" }}>{error}</div>
         ) : funds.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 0", background: "var(--color-bg-card)", border: "1px dashed var(--color-border)", borderRadius: 8 }}>
-            <span style={{ fontSize: 28 }}>💰</span>
+            <Coins size={48} style={{ color: "var(--color-accent)", opacity: 0.8, marginBottom: 16 }} />
             <p style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", margin: "8px 0 4px" }}>No Funds</p>
             <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 14 }}>Be the first to create one</p>
-            <AnimatedButton variant="primary" size="sm" onClick={() => { router.push("/dashboard?tab=create"); }}>Create Fund →</AnimatedButton>
+            <AnimatedButton variant="primary" size="sm" onClick={() => { router.push("/dashboard?tab=create"); }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                Create Fund <ChevronRight size={14} />
+              </span>
+            </AnimatedButton>
           </div>
         ) : (
           <motion.div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
