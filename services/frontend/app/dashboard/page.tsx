@@ -173,7 +173,7 @@ function Overview() {
         ) : <StatCard label="Trust Score" value="—" delay={0.15} icon={<span>🛡️</span>} accent="#22c55e" />}
       </div>
 
-      {/* Wallet & Balance Card */}
+      {/* Wallet & Balance Card
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <GlassCard hover={false} depth={true}>
           <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
@@ -210,7 +210,7 @@ function Overview() {
             </div>
           </div>
         </GlassCard>
-      </motion.div>
+      </motion.div> */}
 
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>

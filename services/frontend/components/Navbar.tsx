@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useThemeMode } from "@/components/ThemeProvider";
 import { useAuth } from "@/hooks/useAuth";
-import { getWalletInfo } from "@/services/api";
+// import { getWalletInfo } from "@/services/api";
 import GoogleTranslate from "@/components/GoogleTranslate";
 
 export default function Navbar() {
@@ -15,42 +15,42 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  // const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setWalletBalance(null);
-      return;
-    }
+  // useEffect(() => {
+  //   if (!isAuthenticated) {
+  //     setWalletBalance(null);
+  //     return;
+  //   }
 
-    let disposed = false;
-    const loadWalletBalance = async () => {
-      try {
-        const wallet = await getWalletInfo();
-        if (!disposed) {
-          setWalletBalance(wallet.balance);
-        }
-      } catch {
-        if (!disposed) {
-          setWalletBalance(null);
-        }
-      }
-    };
+  //   let disposed = false;
+  //   const loadWalletBalance = async () => {
+  //     try {
+  //       const wallet = await getWalletInfo();
+  //       if (!disposed) {
+  //         setWalletBalance(wallet.balance);
+  //       }
+  //     } catch {
+  //       if (!disposed) {
+  //         setWalletBalance(null);
+  //       }
+  //     }
+  //   };
 
-    void loadWalletBalance();
-    const interval = setInterval(() => {
-      void loadWalletBalance();
-    }, 15000);
+  //   void loadWalletBalance();
+  //   const interval = setInterval(() => {
+  //     void loadWalletBalance();
+  //   }, 15000);
 
-    return () => {
-      disposed = true;
-      clearInterval(interval);
-    };
-  }, [isAuthenticated]);
+  //   return () => {
+  //     disposed = true;
+  //     clearInterval(interval);
+  //   };
+  // }, [isAuthenticated]);
 
-  const formattedWalletBalance = walletBalance === null
-    ? "--"
-    : walletBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  // const formattedWalletBalance = walletBalance === null
+  //   ? "--"
+  //   : walletBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -115,6 +115,7 @@ export default function Navbar() {
               );
             })}
 
+            {/* Wallet balance display - disabled for now
             {isAuthenticated && (
               <div
                 style={{
@@ -133,7 +134,7 @@ export default function Navbar() {
               >
                 {formattedWalletBalance} CHIT
               </div>
-            )}
+            )} */}
 
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.04)", margin: "0 8px" }} />
 
@@ -237,6 +238,8 @@ export default function Navbar() {
                 {l.label}
               </Link>
             ))}
+            
+            {/* Wallet balance display - disabled for now
             {isAuthenticated && (
               <div
                 style={{
@@ -253,7 +256,8 @@ export default function Navbar() {
               >
                 Wallet Balance: {formattedWalletBalance} CHIT
               </div>
-            )}
+            )} */}
+            
             {isAuthenticated && (
               <button onClick={() => { logout(); setMobileOpen(false); }}
                 style={{ display: "block", marginTop: 6, fontSize: 12, color: "var(--color-text-muted)", background: "none", border: "none", cursor: "pointer", padding: "8px 0", fontFamily: '"Inter",sans-serif' }}>
