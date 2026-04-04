@@ -80,7 +80,13 @@ export default function FundDetailPage() {
 
   const { lastMessage } = useAuctionSocket(id);
   const isMember = members.some(m => m.user_id === currentUserId && m.status === "active");
+  const isUserPending = members.some(
+  (m) => m.user_id === currentUserId && m.status === "pending"
+);
 
+const isUserActive = members.some(
+  (m) => m.user_id === currentUserId && m.status === "active"
+);
   useEffect(() => {
     if (!id) return;
     // Set current user id synchronously from the token before any async work
@@ -94,6 +100,12 @@ export default function FundDetailPage() {
         setFund(f);
         if (membersResult !== null) {
           setMembers(membersResult);
+          // Check if current user is already an active member
+          const uid = getCurrentUserId();
+          const userIsAlreadyActive = membersResult.some(m => m.user_id === uid && m.status === "active");
+          if (userIsAlreadyActive) {
+            setApplyResult(null);  // Clear application card if already a member
+          }
         }
         // Determine if current user is the creator
         const uid = getCurrentUserId();
@@ -118,7 +130,7 @@ export default function FundDetailPage() {
 
   // ── Polling: re-fetch members + contributions every 10s ──
   useEffect(() => {
-    if (!id) return;
+    if (!id || !currentUserId) return;
     const interval = setInterval(async () => {
       try {
         const [membersResult, c, a] = await Promise.allSettled([
@@ -126,13 +138,29 @@ export default function FundDetailPage() {
           getFundContributions(id),
           getAuction(id),
         ]);
-        if (membersResult.status === "fulfilled" && Array.isArray(membersResult.value)) setMembers(membersResult.value);
+        if (membersResult.status === "fulfilled" && Array.isArray(membersResult.value)) {
+          setMembers(membersResult.value);
+          // If the current user is now an active member, clear the apply result
+          const userIsNowActive = membersResult.value.some(
+            m => m.user_id === currentUserId && m.status === "active"
+          );
+          if (userIsNowActive) {
+            setApplyResult(null);
+          }
+        }
         if (c.status === "fulfilled") setContribData(c.value);
         if (a.status === "fulfilled") setAuctionSnap(a.value);
       } catch { /* ignore polling errors */ }
     }, 10000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [id, currentUserId]);
+
+  // Monitor isMember and clear applyResult when user becomes active
+  useEffect(() => {
+    if (isMember && applyResult) {
+      setApplyResult(null);
+    }
+  }, [isMember, applyResult]);
 
   // Check profile completeness on mount
   useEffect(() => {
@@ -172,6 +200,10 @@ export default function FundDetailPage() {
       await approveFundMember(id, memberId);
       const m = await getFundMembers(id).catch(() => members);
       setMembers(m);
+      // Clear the apply result if the current user is the one being approved
+      if (memberId === currentUserId) {
+        setApplyResult(null);
+      }
       setActionMessage("Member approved!");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to approve");
@@ -535,25 +567,89 @@ export default function FundDetailPage() {
                   </div>
                 )}
 
-                {fund?.status === "open" && !isCreator && (fund?.current_member_count ?? 0) < (fund?.max_members ?? 0) && !applyResult ? (
-                  <AnimatedButton onClick={handleApply} variant="primary" size="lg" fullWidth disabled={applyLoading}>
-                    {applyLoading ? (
-                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                        style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", margin: "0 auto" }} />
-                    ) : "Apply Now →"}
-                  </AnimatedButton>
-                ) : fund?.status === "open" && !isCreator && applyResult ? (
-                  <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
-                    style={{ textAlign: "center", padding: 16, borderRadius: 8, background: "rgba(34,197,94,0.06)", boxShadow: "var(--shadow-card)" }}>
-                    <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", delay: 0.1 }}
-                      style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(34,197,94,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", fontSize: 20 }}>
-                      ✓
-                    </motion.div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#22c55e", margin: 0 }}>
-                      {applyResult.message || "Application submitted!"}
-                    </p>
-                  </motion.div>
-                ) : null}
+                {fund?.status === "open" &&
+ !isCreator &&
+ (fund?.current_member_count ?? 0) < (fund?.max_members ?? 0) &&
+ !isUserActive &&
+ !isUserPending && (
+
+  <AnimatedButton
+    onClick={handleApply}
+    variant="primary"
+    size="lg"
+    fullWidth
+    disabled={applyLoading}
+  >
+    {applyLoading ? (
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          border: "2px solid rgba(255,255,255,0.3)",
+          borderTopColor: "#fff",
+          margin: "0 auto",
+        }}
+      />
+    ) : (
+      "Apply Now →"
+    )}
+  </AnimatedButton>
+)}
+
+{/* 🟡 Pending */}
+{isUserPending && (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    style={{
+      textAlign: "center",
+      padding: 16,
+      borderRadius: 8,
+      background: "rgba(245,158,11,0.08)",
+      boxShadow: "var(--shadow-card)",
+    }}
+  >
+    <p
+      style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#f59e0b",
+        margin: 0,
+      }}
+    >
+      ⏳ Application under review
+    </p>
+  </motion.div>
+)}
+
+{/* 🟢 Approved */}
+{isUserActive && (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    style={{
+      textAlign: "center",
+      padding: 16,
+      borderRadius: 8,
+      background: "rgba(34,197,94,0.08)",
+      boxShadow: "var(--shadow-card)",
+    }}
+  >
+    <p
+      style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#22c55e",
+        margin: 0,
+      }}
+    >
+      You joined this fund
+    </p>
+  </motion.div>
+)}
               </GlassCard>
 
               {/* ── Auction Card ── */}

@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/Jaisheesh-2006/ChitSetu/handlers"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/auction"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/users"
 	"github.com/Jaisheesh-2006/ChitSetu/middleware"
 	"github.com/Jaisheesh-2006/ChitSetu/models"
@@ -17,7 +19,7 @@ import (
 
 // DBPinger captures the minimum database behavior needed for health checks.
 
-func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
+func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authService *auth.Service, chitfundHandler *chitfund.Handler) *gin.Engine {
 	router := gin.New()
 	router.Use(middleware.CORS(), gin.Logger(), gin.Recovery())
 	authHandler := auth.NewHandler(authService)
@@ -69,5 +71,21 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	usersGroup.GET("/kyc/status", profileHandler.GetKYCStatus)
 	usersGroup.GET("/me/funds", profileHandler.GetMyFunds)
 	usersGroup.GET("/me/contributions", profileHandler.GetMyContributions)
+
+	fundGroup := router.Group("/funds")
+	fundGroup.Use(authMiddleware)
+	fundGroup.POST("", chitfundHandler.CreateFund)
+	fundGroup.GET("", chitfundHandler.ListFunds)
+	fundGroup.GET("/:id", chitfundHandler.GetFund)
+	fundGroup.POST("/:id/apply", chitfundHandler.Apply)
+	fundGroup.POST("/:id/approve", chitfundHandler.Approve)
+	fundGroup.GET("/:id/members", chitfundHandler.Members)
+	fundGroup.GET("/:id/contributions/current", chitfundHandler.CurrentCycleContributions)
+	fundGroup.POST("/:id/auction/start", auctionHandler.StartAuction)
+	fundGroup.POST("/:id/auction/activate", auctionHandler.ActivateAuction)
+	fundGroup.POST("/:id/auction/bid", auctionHandler.PlaceBid)
+	fundGroup.GET("/:id/auction", auctionHandler.GetAuction)
+
+	router.GET("/ws/funds/:id", authMiddleware, auctionHandler.FundWebSocket)
 	return router
 }
