@@ -44,13 +44,7 @@ export default function ChitFundCard({ name, totalPool, totalMembers, monthlyCon
         transition: "box-shadow 0.35s, transform 0.3s", transformStyle: "preserve-3d",
       }}
     >
-      {/* Glossy shine sweep */}
-      <div style={{
-        position: "absolute", top: 0, left: 0, width: "40%", height: "100%",
-        background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)",
-        transform: hovering ? "translateX(350%) skewX(-15deg)" : "translateX(-100%) skewX(-15deg)",
-        transition: "transform 0.7s ease", pointerEvents: "none", zIndex: 1,
-      }} />
+
 
       {/* Top edge glow */}
       <div style={{

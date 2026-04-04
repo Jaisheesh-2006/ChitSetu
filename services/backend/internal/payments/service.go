@@ -1,45 +1,16 @@
 package payments
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"log"
-	"math"
-	"net/http"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	"github.com/google/uuid"
 )
 
 type Service struct {
-	repo                 *Repository
-	httpClient           *http.Client
-	razorpayKeyID        string
-	razorpayKeySecret    string
-	appBaseURL           string
-	resendAPIKey         string
-	resendFromEmail      string
-	defaultReminderEmail string
-}
-
-type SessionDetails struct {
-	AmountDue   float64   `json:"amount"`
-	FundID      string    `json:"fund_id"`
-	CycleNumber int       `json:"cycle_no"`
-	DueDate     time.Time `json:"due_date"`
-}
-
-type CreateOrderResult struct {
-	OrderID string `json:"order_id"`
-	Amount  int64  `json:"amount"`
-	KeyID   string `json:"key_id"`
+	repo *Repository
 }
 
 type VerifyInput struct {
@@ -49,7 +20,7 @@ type VerifyInput struct {
 	RazorpaySignature string
 }
 
-func NewService(repo *Repository, contractSvc *web3.ContractService, walletSvc *wallet.Service) *Service {
+func NewService(repo *Repository) *Service {
 	baseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
 	if baseURL == "" {
 		baseURL = "https://yourapp.com"
@@ -91,42 +62,6 @@ func (s *Service) RunDailyReminderJob(ctx context.Context) error {
 		return err
 	}
 
-	items, err := s.repo.ListUpcomingPendingContributions(ctx)
-	if err != nil {
-		return err
-	}
-
-	for _, item := range items {
-		session, err := s.repo.GetActiveSessionForContribution(ctx, item.ContributionID)
-		if err != nil {
-			log.Printf("get active session failed for contribution %s: %v", item.ContributionID, err)
-			continue
-		}
-		if session == nil {
-			session, err = s.repo.CreatePaymentSession(ctx, item.ContributionID, item.UserID, item.AmountDue, time.Now().Add(48*time.Hour))
-			if err != nil {
-				log.Printf("create session failed for contribution %s: %v", item.ContributionID, err)
-				continue
-			}
-		}
-
-		link := fmt.Sprintf("%s/pay?session_id=%s", s.appBaseURL, session.ID)
-		if err := s.sendReminderEmail(ctx, item.Email, link); err != nil {
-			log.Printf("send reminder email failed for user %s: %v", item.UserID, err)
-		}
-	}
-
-	return nil
-}
-
-func (s *Service) GeneratePaymentSession(ctx context.Context, userID, fundID string, cycleNumber int) (string, error) {
-	contribID, amountDue, _, status, err := s.repo.GetPendingContributionInfo(ctx, fundID, userID, cycleNumber)
-	if err != nil {
-		return "", err
-	}
-	if status == "paid" {
-		return "", fmt.Errorf("contribution already paid")
-	}
 
 	activeSession, err := s.repo.GetActiveSessionForContribution(ctx, contribID)
 	if err != nil {
@@ -146,10 +81,28 @@ func (s *Service) GeneratePaymentSession(ctx context.Context, userID, fundID str
 }
 
 func (s *Service) GetSessionDetails(ctx context.Context, userID, sessionID string) (*SessionDetails, error) {
+	existing, err := s.repo.GetActiveSessionForContribution(ctx, contributionID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		return existing.ID, nil
+	}
+
+	expiresAt := time.Now().Add(15 * time.Minute)
+	session, err := s.repo.CreatePaymentSession(ctx, contributionID, userID, amountDue, expiresAt)
+	if err != nil {
+		return "", err
+	}
+	return session.ID, nil
+
+func (s *Service) GetSessionDetails(ctx context.Context, userID, sessionID string) (map[string]interface{}, error) {
+
 	session, err := s.repo.GetSessionForUser(ctx, sessionID, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	if session.ContributionSt == "paid" {
 		return nil, fmt.Errorf("contribution already paid")
 	}
@@ -171,10 +124,27 @@ func (s *Service) CreateOrder(ctx context.Context, userID, sessionID string) (*C
 		return nil, fmt.Errorf("razorpay keys are not configured")
 	}
 
+
+
+	return map[string]interface{}{
+		"session_id":      session.ID,
+		"fund_id":         session.FundID,
+		"cycle_number":    session.CycleNumber,
+		"amount_due":      session.AmountDue,
+		"status":          session.Status,
+		"expires_at":      session.ExpiresAt,
+		"due_date":        session.DueDate,
+		"contribution_id": session.ContributionID,
+	}, nil
+}
+
+func (s *Service) CreateOrder(ctx context.Context, userID, sessionID string) (map[string]interface{}, error) {
+
 	session, err := s.repo.GetSessionForUser(ctx, sessionID, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	if session.ContributionSt == "paid" {
 		return nil, fmt.Errorf("contribution already paid")
 	}
@@ -326,4 +296,47 @@ func (s *Service) sendReminderEmail(ctx context.Context, toEmail, paymentLink st
 		return fmt.Errorf("resend api returned status %d", resp.StatusCode)
 	}
 	return nil
+
+	if session.Status != "created" {
+		return nil, fmt.Errorf("session is not payable")
+	}
+	if session.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("session expired")
+	}
+
+	orderID := "order_" + uuid.NewString()
+	if err := s.repo.UpsertOrderForSession(ctx, sessionID, orderID); err != nil {
+		return nil, err
+	}
+
+	amountPaise := int64(session.AmountDue * 100)
+	return map[string]interface{}{
+		"order_id":     orderID,
+		"session_id":   sessionID,
+		"amount_paise": amountPaise,
+		"currency":     "INR",
+	}, nil
+}
+
+func (s *Service) VerifyPayment(ctx context.Context, userID string, input VerifyInput) (bool, error) {
+	if strings.TrimSpace(input.SessionID) == "" {
+		return false, fmt.Errorf("session_id is required")
+	}
+	if strings.TrimSpace(input.RazorpayOrderID) == "" || strings.TrimSpace(input.RazorpayPaymentID) == "" || strings.TrimSpace(input.RazorpaySignature) == "" {
+		return false, fmt.Errorf("razorpay verification fields are required")
+	}
+
+	storedOrderID, err := s.repo.GetOrderForSession(ctx, input.SessionID)
+	if err != nil {
+		return false, err
+	}
+	if storedOrderID != input.RazorpayOrderID {
+		return false, fmt.Errorf("order mismatch for session")
+	}
+
+	alreadyPaid, _, err := s.repo.MarkPaymentVerified(ctx, userID, input.SessionID, input.RazorpayPaymentID)
+	if err != nil {
+		return false, err
+	}
+	return alreadyPaid, nil
 }

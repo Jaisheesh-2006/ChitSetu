@@ -547,12 +547,7 @@ function FeatureCard({ icon, title, desc, i }: { icon: React.ReactNode; title: s
         transformStyle: "preserve-3d", cursor: "default",
       }}
     >
-      <div style={{
-        position: "absolute", top: 0, left: 0, width: "40%", height: "100%",
-        background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent)",
-        transform: h ? "translateX(350%) skewX(-15deg)" : "translateX(-100%) skewX(-15deg)",
-        transition: "transform 0.7s ease", pointerEvents: "none", zIndex: 1,
-      }} />
+
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: h ? 2 : 1,
         background: h ? "var(--gradient-primary)" : "linear-gradient(90deg, transparent, rgba(255,255,255,0.02), transparent)",

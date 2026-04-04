@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
 type Repository struct {
@@ -118,7 +118,7 @@ func (r *Repository) EnsureContributionsForActiveFunds(ctx context.Context) erro
 						"status":       "pending",
 						"created_at":   time.Now(),
 					}},
-					options.Update().SetUpsert(true),
+					options.UpdateOne().SetUpsert(true),
 				)
 				if err != nil {
 					membersCur.Close(ctx)
@@ -288,7 +288,7 @@ func (r *Repository) UpsertOrderForSession(ctx context.Context, sessionID, order
 		ctx,
 		bson.M{"session_id": sessionID},
 		bson.M{"$set": bson.M{"order_id": orderID, "updated_at": now}, "$setOnInsert": bson.M{"_id": uuid.NewString(), "session_id": sessionID, "created_at": now}},
-		options.Update().SetUpsert(true),
+		options.UpdateOne().SetUpsert(true),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert order for session: %w", err)
@@ -328,7 +328,7 @@ func (r *Repository) MarkPaymentVerified(ctx context.Context, userID, sessionID,
 
 	var alreadyPaid bool
 	var paidContribution PaidContribution
-	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) {
+	_, err = session.WithTransaction(ctx, func(sc context.Context) (interface{}, error) {
 		var paymentSession struct {
 			ID             string    `bson:"_id"`
 			ContributionID string    `bson:"contribution_id"`

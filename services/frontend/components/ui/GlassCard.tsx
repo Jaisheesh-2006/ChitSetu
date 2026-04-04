@@ -60,19 +60,7 @@ export default function GlassCard({
         ...style,
       }}
     >
-      {/* Glossy shine sweep */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0, left: 0,
-          width: "40%", height: "100%",
-          background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)",
-          transform: hovering ? "translateX(350%) skewX(-15deg)" : "translateX(-100%) skewX(-15deg)",
-          transition: "transform 0.7s ease",
-          pointerEvents: "none",
-          zIndex: 1,
-        }}
-      />
+
 
       {/* Top edge highlight */}
       <div style={{

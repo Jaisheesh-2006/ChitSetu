@@ -8,6 +8,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/handlers"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auction"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/chat"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/payments"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/users"
@@ -20,7 +21,7 @@ import (
 
 // DBPinger captures the minimum database behavior needed for health checks.
 
-func SetupRouter(store *database.Store, paymentHandler *payments.Handler, auctionHandler *auction.Handler, authService *auth.Service, chitfundHandler *chitfund.Handler) *gin.Engine {
+func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authService *auth.Service, chitfundHandler *chitfund.Handler, paymentHandler *payments.Handler, chatHandler *chat.Handler) *gin.Engine {
 	router := gin.New()
 	router.Use(middleware.CORS(), gin.Logger(), gin.Recovery())
 	authHandler := auth.NewHandler(authService)
@@ -93,6 +94,8 @@ func SetupRouter(store *database.Store, paymentHandler *payments.Handler, auctio
 	fundGroup.POST("/:id/auction/activate", auctionHandler.ActivateAuction)
 	fundGroup.POST("/:id/auction/bid", auctionHandler.PlaceBid)
 	fundGroup.GET("/:id/auction", auctionHandler.GetAuction)
+	fundGroup.POST("/:id/chat", chatHandler.SendMessage)
+	fundGroup.GET("/:id/chat", chatHandler.GetMessages)
 
 	router.GET("/ws/funds/:id", authMiddleware, auctionHandler.FundWebSocket)
 	return router
