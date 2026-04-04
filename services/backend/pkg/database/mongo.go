@@ -102,6 +102,18 @@ func (s *Store) EnsureIndexes(ctx context.Context) error {
 			{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "status", Value: 1}}, Options: options.Index().SetName("idx_contributions_user_status")},
 			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "due_date", Value: 1}}, Options: options.Index().SetName("idx_contributions_status_due")},
 		},
+		"auction_sessions": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_auction_sessions_fund_cycle")},
+			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "last_bid_at", Value: 1}, {Key: "created_at", Value: 1}}, Options: options.Index().SetName("idx_auction_sessions_live_idle")},
+		},
+		"auction_results": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_auction_results_fund_cycle")},
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "winner_user_id", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_auction_results_fund_winner")},
+		},
+		"payouts": {
+			{Keys: bson.D{{Key: "fund_id", Value: 1}, {Key: "cycle_number", Value: 1}}, Options: options.Index().SetUnique(true).SetName("uniq_payouts_fund_cycle")},
+			{Keys: bson.D{{Key: "status", Value: 1}, {Key: "updated_at", Value: 1}}, Options: options.Index().SetName("idx_payouts_status_updated")},
+		},
 	}
 
 	for collectionName, indexes := range indexSets {

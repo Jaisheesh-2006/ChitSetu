@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/Jaisheesh-2006/ChitSetu/api"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/auction"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
 )
@@ -42,11 +44,29 @@ func main() {
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
 	authService := auth.NewService(store.Database)
+	wsManager := ws.NewManager()
+	auctionRepo := auction.NewRepository(store.Database)
+
+	// Broadcast participant count only for explicit auction-room joins/leaves.
+	wsManager.OnAuctionParticipantChange = func(fundID string, count int) {
+		_ = wsManager.Broadcast(fundID, map[string]any{
+			"type":  "participants",
+			"count": count,
+		})
+	}
+
+	auctionService := auction.NewService(auctionRepo, wsManager)
+	auctionHandler := auction.NewHandler(auctionService, wsManager)
+
+	auctionSchedulerCtx, stopAuctionScheduler := context.WithCancel(context.Background())
+	defer stopAuctionScheduler()
+	auctionService.StartScheduler(auctionSchedulerCtx)
+
 	chitfundRepo := chitfund.NewRepository(store.Database)
 	chitfundService := chitfund.NewService(chitfundRepo)
 	chitfundHandler := chitfund.NewHandler(chitfundService)
 	// Setup router.
-	router := api.SetupRouter(store, authService, chitfundHandler)
+	router := api.SetupRouter(store, auctionHandler, authService, chitfundHandler)
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
