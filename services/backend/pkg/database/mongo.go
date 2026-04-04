@@ -28,7 +28,7 @@ func LoadConfigFromEnv() Config {
 	connectTimeoutMs := getenvOrDefaultInt("MONGO_CONNECT_TIMEOUT_MS", 5000)
 	return Config{
 		URI:            getenvOrDefault("MONGO_URI", "mongodb://localhost:27017"),
-		DatabaseName:   getenvOrDefault("MONGO_DB_NAME", "chitsetu_db"),
+		DatabaseName:   getenvOrDefault("MONGO_DB_NAME", "chitsetudb"),
 		MaxPoolSize:    uint64(getenvOrDefaultInt("MONGO_MAX_POOL_SIZE", 50)),
 		MinPoolSize:    uint64(getenvOrDefaultInt("MONGO_MIN_POOL_SIZE", 5)),
 		ConnectTimeout: time.Duration(connectTimeoutMs) * time.Millisecond,

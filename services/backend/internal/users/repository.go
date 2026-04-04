@@ -102,14 +102,65 @@ func NewRepository(db *mongo.Database) *Repository {
 	return &Repository{
 		profilesCol: db.Collection("user_profiles"),
 		usersCol:    db.Collection("users"),
+		fundsCol:    db.Collection("funds"),
+		membersCol:  db.Collection("fund_members"),
+		contribCol:  db.Collection("contributions"),
 	}
 }
+
+func (r *Repository) currentKYCStatus(ctx context.Context, userID string) (string, error) {
+	var userDoc struct {
+		KYC *KYCFields `bson:"kyc,omitempty"`
+	}
+
+	err := r.usersCol.FindOne(
+		ctx,
+		bson.D{{Key: "_id", Value: userID}},
+		options.FindOne().SetProjection(bson.D{{Key: "kyc", Value: 1}}),
+	).Decode(&userDoc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", nil
+		}
+		return "", fmt.Errorf("get current kyc status: %w", err)
+	}
+	if userDoc.KYC == nil {
+		return "", nil
+	}
+	return userDoc.KYC.Status, nil
+}
+
+func (r *Repository) syncProfileKYCStatus(ctx context.Context, userID string, status string) error {
+	result, err := r.profilesCol.UpdateOne(
+		ctx,
+		bson.D{{Key: "user_id", Value: userID}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "kyc_status", Value: status},
+			{Key: "updated_at", Value: time.Now()},
+		}}},
+	)
+	if err != nil {
+		return fmt.Errorf("sync profile kyc status: %w", err)
+	}
+	if result.MatchedCount == 0 {
+		return fmt.Errorf("sync profile kyc status affected 0 rows")
+	}
+	return nil
+}
+
 func (r *Repository) UpsertProfile(ctx context.Context, profile ProfileInput) error {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
 	now := time.Now()
-	_, err := r.profilesCol.UpdateOne(
+	kycStatus, err := r.currentKYCStatus(ctx, profile.UserID)
+	if err != nil {
+		return err
+	}
+	if kycStatus == "" {
+		kycStatus = "pending"
+	}
+	_, err = r.profilesCol.UpdateOne(
 		ctx,
 		bson.D{{Key: "user_id", Value: profile.UserID}},
 		bson.D{
@@ -120,7 +171,7 @@ func (r *Repository) UpsertProfile(ctx context.Context, profile ProfileInput) er
 				{Key: "pan_number", Value: profile.PANNumber},
 				{Key: "monthly_income", Value: profile.MonthlyIncome},
 				{Key: "employment_years", Value: profile.EmploymentYears},
-				{Key: "kyc_status", Value: "pending"},
+				{Key: "kyc_status", Value: kycStatus},
 				{Key: "updated_at", Value: now},
 			}},
 			{Key: "$setOnInsert", Value: bson.D{{Key: "user_id", Value: profile.UserID}, {Key: "created_at", Value: now}}},
@@ -251,7 +302,7 @@ func (r *Repository) StorePANVerified(ctx context.Context, userID string, cibilS
 	if result.MatchedCount == 0 {
 		return fmt.Errorf("kyc transition failed: expected status=pending")
 	}
-	return nil
+	return r.syncProfileKYCStatus(ctx, userID, "pan_verified")
 }
 
 func (r *Repository) StoreSyntheticHistory(ctx context.Context, userID string, history interface{}) error {
@@ -272,7 +323,7 @@ func (r *Repository) StoreSyntheticHistory(ctx context.Context, userID string, h
 	if result.MatchedCount == 0 {
 		return fmt.Errorf("kyc transition failed: expected status=pan_verified")
 	}
-	return nil
+	return r.syncProfileKYCStatus(ctx, userID, "credit_fetched")
 }
 
 // StoreTrustScore stores the ML-produced trust score and transitions
@@ -305,7 +356,7 @@ func (r *Repository) StoreTrustScore(
 	if result.MatchedCount == 0 {
 		return fmt.Errorf("kyc transition failed: expected status=credit_fetched")
 	}
-	return nil
+	return r.syncProfileKYCStatus(ctx, userID, "verified")
 }
 
 func (r *Repository) GetUserProfile(ctx context.Context, userID string) (*UserProfileDocument, error) {
@@ -358,7 +409,6 @@ func (r *Repository) GetUserCredit(ctx context.Context, userID string) (*CreditF
 
 	return user.Credit, nil
 }
-
 
 func (r *Repository) ListActiveMembershipsByUser(ctx context.Context, userID string) ([]UserFundMembership, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)

@@ -156,6 +156,7 @@ func (h *Handler) GetRiskScore(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"score":         credit.Score,
+		"kyc":           "verified",
 		"risk_category": credit.RiskCategory,
 		"checked_at":    credit.CheckedAt,
 	})

@@ -468,28 +468,28 @@ export async function getFundContributions(fundId: string): Promise<CurrentCycle
 
 /* ── Web3 Wallet API ── */
 
-export interface WalletInfo {
-  address: string;
-  balance: number;
-}
+// export interface WalletInfo {
+//   address: string;
+//   balance: number;
+// }
 
-export async function getWalletInfo(): Promise<WalletInfo> {
-  return fetchAPI<WalletInfo>("/web3/wallet/info");
-}
+// export async function getWalletInfo(): Promise<WalletInfo> {
+//   return fetchAPI<WalletInfo>("/web3/wallet/info");
+// }
 
-export interface WalletHistoryEntry {
-  tx_hash: string;
-  from: string;
-  to: string;
-  value: number;
-  type: "credit" | "debit";
-  timestamp: string;
-}
+// export interface WalletHistoryEntry {
+//   tx_hash: string;
+//   from: string;
+//   to: string;
+//   value: number;
+//   type: "credit" | "debit";
+//   timestamp: string;
+// }
 
-export async function getWalletHistory(address: string): Promise<WalletHistoryEntry[]> {
-  const data = await fetchAPI<{ history: WalletHistoryEntry[] }>(`/web3/wallet/${address}/history`);
-  return data.history || [];
-}
+// export async function getWalletHistory(address: string): Promise<WalletHistoryEntry[]> {
+//   const data = await fetchAPI<{ history: WalletHistoryEntry[] }>(`/web3/wallet/${address}/history`);
+//   return data.history || [];
+// }
 
 /* ── Chat API ── */
 
