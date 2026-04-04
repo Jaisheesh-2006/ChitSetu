@@ -263,7 +263,12 @@ export interface FundDetails {
 export interface FundMember {
   user_id: string;
   full_name: string;
+  email: string;
   status: string;
+  trust_score: number;
+  risk_band: string;
+  default_probability: number;
+  joined_at?: string;
   has_won?: boolean;
   wallet_address?: string;
 }
