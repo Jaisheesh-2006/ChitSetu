@@ -14,6 +14,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auction"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/payments"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
 	"github.com/Jaisheesh-2006/ChitSetu/pkg/database"
 	"github.com/joho/godotenv"
@@ -44,6 +45,13 @@ func main() {
 		log.Fatalf("database index bootstrap failed: %v", err)
 	}
 	authService := auth.NewService(store.Database)
+	// 3. Application Services
+	Repo := payments.NewRepository(store.Database)
+	paymentService := payments.NewService(paymentRepo, contractService, walletService)
+	paymentHandler := payments.NewHandler(paymentService)
+	paymentCron := paymentService.StartDailyReminderCron()
+	defer paymentCron.Stop()
+
 	wsManager := ws.NewManager()
 	auctionRepo := auction.NewRepository(store.Database)
 
