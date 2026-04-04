@@ -47,7 +47,7 @@ func main() {
 	}
 	authService := auth.NewService(store.Database)
 	// 3. Application Services
-	paymentRepo := payments.NewRepository(store.Database)
+	Repo := payments.NewRepository(store.Database)
 	paymentService := payments.NewService(paymentRepo)
 	paymentHandler := payments.NewHandler(paymentService)
 	paymentCron := paymentService.StartDailyReminderCron()
@@ -55,6 +55,7 @@ func main() {
 
 	wsManager := ws.NewManager()
 	auctionRepo := auction.NewRepository(store.Database)
+	chitfundRepo := chitfupaymentnd.NewRepository(store.Database)
 
 	// Broadcast participant count only for explicit auction-room joins/leaves.
 	wsManager.OnAuctionParticipantChange = func(fundID string, count int) {
@@ -71,8 +72,7 @@ func main() {
 	defer stopAuctionScheduler()
 	auctionService.StartScheduler(auctionSchedulerCtx)
 
-	chitfundRepo := chitfund.NewRepository(store.Database)
-	chitfundService := chitfund.NewService(chitfundRepo)
+	chitfundService := chitfund.NewService(chitfundRepo, wsManager)
 	chitfundHandler := chitfund.NewHandler(chitfundService)
 
 	chatRepo := chat.NewRepository(store.Database)
