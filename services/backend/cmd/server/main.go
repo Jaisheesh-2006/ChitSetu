@@ -13,6 +13,7 @@ import (
 	"github.com/Jaisheesh-2006/ChitSetu/api"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auction"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/auth"
+	"github.com/Jaisheesh-2006/ChitSetu/internal/chat"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/chitfund"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/payments"
 	"github.com/Jaisheesh-2006/ChitSetu/internal/ws"
@@ -46,8 +47,8 @@ func main() {
 	}
 	authService := auth.NewService(store.Database)
 	// 3. Application Services
-	Repo := payments.NewRepository(store.Database)
-	paymentService := payments.NewService(paymentRepo, contractService, walletService)
+	paymentRepo := payments.NewRepository(store.Database)
+	paymentService := payments.NewService(paymentRepo)
 	paymentHandler := payments.NewHandler(paymentService)
 	paymentCron := paymentService.StartDailyReminderCron()
 	defer paymentCron.Stop()
@@ -73,8 +74,11 @@ func main() {
 	chitfundRepo := chitfund.NewRepository(store.Database)
 	chitfundService := chitfund.NewService(chitfundRepo)
 	chitfundHandler := chitfund.NewHandler(chitfundService)
+
+	chatRepo := chat.NewRepository(store.Database)
+	chatHandler := chat.NewHandler(chatRepo, wsManager)
 	// Setup router.
-	router := api.SetupRouter(store, auctionHandler, authService, chitfundHandler)
+	router := api.SetupRouter(store, auctionHandler, authService, chitfundHandler, paymentHandler, chatHandler)
 	port := getenvOrDefault("PORT", "8080")
 	addr := ":" + port
 	server := &http.Server{
