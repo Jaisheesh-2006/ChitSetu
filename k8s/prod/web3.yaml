@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: web3
-          image: DOCKERHUB_NAMESPACE/chitsetu-web3:latest
+          image: jaisheesh/chitsetu-web3:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8545

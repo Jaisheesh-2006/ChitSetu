@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: DOCKERHUB_NAMESPACE/chitsetu-backend:latest
+          image: jaisheesh/chitsetu-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

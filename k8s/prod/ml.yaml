@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: ml
-          image: DOCKERHUB_NAMESPACE/chitsetu-ml:latest
+          image: jaisheesh/chitsetu-ml:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
