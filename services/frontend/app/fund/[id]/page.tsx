@@ -16,7 +16,6 @@ import {
   Users,
   Timer,
   CheckCircle2,
-  Wallet,
   ExternalLink,
 } from "lucide-react";
 import {

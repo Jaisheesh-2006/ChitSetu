@@ -8,7 +8,6 @@ import {
   BarChart3,
   Info,
   XCircle,
-  ArrowRight,
 } from "lucide-react";
 import {
   getKYCStatus, verifyPAN, fetchKYCHistory, runMLPrediction, type KYCStatus,

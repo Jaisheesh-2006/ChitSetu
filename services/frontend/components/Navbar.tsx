@@ -27,7 +27,6 @@ export default function Navbar() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      setWalletBalance(null);
       return;
     }
 
