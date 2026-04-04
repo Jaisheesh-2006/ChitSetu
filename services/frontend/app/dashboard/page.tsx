@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import { motion, AnimatePresence } from "framer-motion";
@@ -21,9 +21,28 @@ import {
   getMyContributions,
   type ProfileInput,
   type CreateFundInput,
+  type ActiveFund,
+  type RiskScoreData,
+  type Contribution,
+  type ProfileData,
 } from "@/services/api";
 
 type Tab = "overview" | "profile" | "create";
+
+type ProfileWithKYC = ProfileData & {
+  profile?: {
+    pan?: string;
+    monthly_income?: number;
+  };
+  credit?: {
+    score?: number;
+    risk_category?: string;
+  };
+};
+
+type ContributionWithBlockchain = Contribution & {
+  blockchain_status?: string;
+};
 
 /* ── Custom Input ── */
 function Input({
@@ -183,9 +202,9 @@ function CountUp({ value, prefix = "" }: { value: number; prefix?: string }) {
 /* ───────────────────────────────────────── */
 function Overview() {
   const [loading, setLoading] = useState(true);
-  const [funds, setFunds] = useState<any[]>([]);
-  const [risk, setRisk] = useState<any>(null);
-  const [contribs, setContribs] = useState<any[]>([]);
+  const [funds, setFunds] = useState<ActiveFund[]>([]);
+  const [risk, setRisk] = useState<RiskScoreData | null>(null);
+  const [contribs, setContribs] = useState<Contribution[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -230,10 +249,7 @@ function Overview() {
       </div>
     );
 
-  const total = contribs.reduce(
-    (s: number, c: any) => s + (c.amount_due || 0),
-    0,
-  );
+  const total = contribs.reduce((s: number, c) => s + (c.amount_due || 0), 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -613,11 +629,13 @@ function Overview() {
             </p>
           ) : (
             contribs.slice(0, 5).map((c) => {
+              const contribution = c as ContributionWithBlockchain;
+              const blockchainStatus = contribution.blockchain_status;
               const status =
                 c.status === "paid" &&
-                c.blockchain_status &&
-                c.blockchain_status !== "confirmed"
-                  ? c.blockchain_status
+                blockchainStatus &&
+                blockchainStatus !== "confirmed"
+                  ? blockchainStatus
                   : c.status;
               const style =
                 status === "paid" || status === "confirmed"
@@ -683,8 +701,8 @@ function Overview() {
                         {status}
                       </span>
                       {c.status === "paid" &&
-                        c.blockchain_status &&
-                        c.blockchain_status !== "confirmed" && (
+                        blockchainStatus &&
+                        blockchainStatus !== "confirmed" && (
                           <motion.span
                             animate={{ opacity: [1, 0.5, 1] }}
                             transition={{ repeat: Infinity, duration: 1.5 }}
@@ -735,7 +753,7 @@ function Profile({ onUpdate }: { onUpdate: () => void }) {
 
   useEffect(() => {
     getProfile()
-      .then((d: any) => {
+      .then((d: ProfileWithKYC) => {
         if (d?.full_name) {
           setForm({
             full_name: d.full_name,
@@ -746,10 +764,11 @@ function Profile({ onUpdate }: { onUpdate: () => void }) {
             employment_years: d.employment_years || 0,
           });
           setEdit(false);
-          if (d.credit?.score > 0) {
+          const creditScore = d.credit?.score ?? 0;
+          if (creditScore > 0) {
             setTrust({
-              score: d.credit.score,
-              riskBand: d.credit.risk_category,
+              score: creditScore,
+              riskBand: d.credit?.risk_category ?? "Unknown",
             });
             setKycDone(true);
           }
@@ -1922,45 +1941,42 @@ function CreateFund() {
 export default function DashboardPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("overview");
-  const [profileComplete, setProfileComplete] = useState<boolean | null>(null); // null=loading
-
-  useEffect(() => {
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === "undefined") return "overview";
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
-    if (
-      tabParam === "create" ||
-      tabParam === "profile" ||
-      tabParam === "overview"
-    ) {
-      setTab(tabParam as Tab);
-    }
-  }, []);
+    return tabParam === "create" || tabParam === "profile" || tabParam === "overview"
+      ? tabParam
+      : "overview";
+  });
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null); // null=loading
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.push("/");
   }, [isAuthenticated, isLoading, router]);
 
-  const checkProfile = async () => {
+  const checkProfile = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
       const p = await getProfile();
-      const pan = (p as any).profile?.pan || (p as any).pan_number;
+      const profile = p as ProfileWithKYC;
+      const pan = profile.profile?.pan || profile.pan_number;
       const complete = !!(p.full_name && pan);
       setProfileComplete(complete);
     } catch {
       setProfileComplete(false);
     }
-  };
+  }, [isAuthenticated]);
 
   // Check profile completeness on mount
   useEffect(() => {
     if (isAuthenticated) {
-      checkProfile().then(() => {
-        if (profileComplete === false) setTab("profile");
-      });
+      const timer = window.setTimeout(() => {
+        void checkProfile();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, checkProfile]);
 
   if (isLoading)
     return (
