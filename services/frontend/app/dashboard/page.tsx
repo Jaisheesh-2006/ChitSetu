@@ -112,18 +112,18 @@ function Overview() {
         getMyFunds(), 
         getRiskScore(), 
         getMyContributions(),
-        getWalletInfo()
+        // getWalletInfo()
       ]);
       if (f.status === "fulfilled") setFunds(f.value || []);
       if (r.status === "fulfilled") setRisk(r.value);
       if (c.status === "fulfilled") setContribs(c.value || []);
-      if (w.status === "fulfilled") setWallet(w.value);
+      // if (w.status === "fulfilled") setWallet(w.value);
       setLoading(false);
     })();
 
     const interval = setInterval(async () => {
       try {
-        const [c,w] = await Promise.allSettled([getMyContributions(), getWalletInfo()]);
+        const [c,w] = await Promise.allSettled([getMyContributions()]);
         if (c.status === "fulfilled") setContribs(c.value || []);
         if (w.status === "fulfilled") setWallet(w.value);
       } catch {
