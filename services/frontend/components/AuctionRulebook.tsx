@@ -26,7 +26,12 @@ const rules = [
   {
     icon: "💸",
     title: "Discount Bidding",
-    description: "Bids are placed as increments of ₹10, ₹100, or ₹200. Each bid increases the total discount. The higher you bid, the less you receive as payout — but you get priority access to the fund.",
+    description: "Bids are placed as increments of ₹10, ₹100, or ₹200. Every accepted bid is added on top of the current discount (strict incremental flow).",
+  },
+  {
+    icon: "🛡️",
+    title: "Fair Bid Controls",
+    description: "No member can place two consecutive bids, and the total discount cannot exceed 50% of the monthly pool.",
   },
   {
     icon: "⏱️",
