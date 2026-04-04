@@ -260,6 +260,19 @@ export interface FundDetails {
   current_member_count: number;
 }
 
+export interface FundMember {
+  user_id: string;
+  full_name: string;
+  email: string;
+  status: string;
+  trust_score: number;
+  risk_band: string;
+  default_probability: number;
+  joined_at?: string;
+  has_won?: boolean;
+  wallet_address?: string;
+}
+
 export async function createFund(input: CreateFundInput): Promise<FundDetails> {
   return fetchAPI<FundDetails>("/funds", { method: "POST", body: input });
 }
@@ -272,8 +285,8 @@ export async function getFundDetails(fundId: string): Promise<FundDetails> {
   return fetchAPI<FundDetails>(`/funds/${fundId}`);
 }
 
-export async function getFundMembers(fundId: string): Promise<any[]> {
-  return fetchAPI<any[]>(`/funds/${fundId}/members`);
+export async function getFundMembers(fundId: string): Promise<FundMember[]> {
+  return fetchAPI<FundMember[]>(`/funds/${fundId}/members`);
 }
 
 export interface ApplyResult {

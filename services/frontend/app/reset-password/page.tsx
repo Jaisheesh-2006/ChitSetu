@@ -51,8 +51,8 @@ function ResetPasswordForm() {
     try {
       await resetPassword(token, password);
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "Failed to reset password.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to reset password.");
     } finally {
       setLoading(false);
     }

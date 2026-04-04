@@ -3,7 +3,6 @@
 import React, {
   createContext,
   useContext,
-  useEffect,
   useState,
   useCallback,
 } from "react";
@@ -53,16 +52,14 @@ const AuthContext = createContext<AuthContextValue>({
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({
-    isAuthenticated: false,
-    isLoading: true,
-    user: null,
-  });
-
-  useEffect(() => {
+  const [state, setState] = useState<AuthState>(() => {
     const token = getAccessToken();
-    setState({ isAuthenticated: !!token, isLoading: false, user: null });
-  }, []);
+    return {
+      isAuthenticated: !!token,
+      isLoading: false,
+      user: null,
+    };
+  });
 
   const handleTokens = useCallback((data: TokenPair) => {
     setTokens(data.access_token, data.refresh_token);

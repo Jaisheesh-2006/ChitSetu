@@ -209,6 +209,21 @@ function CSSCoin({ size = 60 }: { size?: number }) {
   );
 }
 
+const LOADER_PARTICLES = [
+  { size: 3.2, alpha: 0.18, top: 8, left: 12, duration: 5.2, delay: 0.2 },
+  { size: 4.1, alpha: 0.24, top: 20, left: 78, duration: 6.4, delay: 0.4 },
+  { size: 3.7, alpha: 0.19, top: 36, left: 26, duration: 4.8, delay: 0.1 },
+  { size: 4.4, alpha: 0.22, top: 52, left: 64, duration: 7.1, delay: 0.8 },
+  { size: 3.5, alpha: 0.16, top: 68, left: 14, duration: 5.9, delay: 0.6 },
+  { size: 4.0, alpha: 0.21, top: 80, left: 42, duration: 6.8, delay: 1.0 },
+  { size: 3.3, alpha: 0.17, top: 14, left: 48, duration: 5.4, delay: 0.3 },
+  { size: 4.2, alpha: 0.23, top: 30, left: 90, duration: 6.2, delay: 1.3 },
+  { size: 3.6, alpha: 0.2, top: 46, left: 8, duration: 5.1, delay: 0.7 },
+  { size: 4.3, alpha: 0.25, top: 62, left: 84, duration: 7.4, delay: 1.1 },
+  { size: 3.4, alpha: 0.18, top: 76, left: 58, duration: 4.9, delay: 0.5 },
+  { size: 4.1, alpha: 0.22, top: 90, left: 30, duration: 6.6, delay: 0.9 },
+];
+
 /* ═══════════════════════════════════════════════════════════════
    GLITCH CREDIT CARD LOADER
    ═══════════════════════════════════════════════════════════════ */
@@ -252,14 +267,16 @@ function GlitchLoader({ onFinish }: { onFinish: () => void }) {
       }} />
 
       {/* Floating particles */}
-      {Array.from({ length: 12 }).map((_, i) => (
+      {LOADER_PARTICLES.map((p, i) => (
         <div key={i} style={{
           position: "absolute",
-          width: 3 + Math.random() * 4, height: 3 + Math.random() * 4,
+          width: p.size,
+          height: p.size,
           borderRadius: "50%",
-          background: `rgba(249,115,22,${0.1 + Math.random() * 0.2})`,
-          top: `${Math.random() * 100}%`, left: `${Math.random() * 100}%`,
-          animation: `float ${4 + Math.random() * 4}s ease-in-out ${Math.random() * 2}s infinite`,
+          background: `rgba(249,115,22,${p.alpha})`,
+          top: `${p.top}%`,
+          left: `${p.left}%`,
+          animation: `float ${p.duration}s ease-in-out ${p.delay}s infinite`,
           pointerEvents: "none",
         }} />
       ))}

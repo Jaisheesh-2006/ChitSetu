@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 interface Props {
   id: string; name: string; totalPool: number; totalMembers: number;
   monthlyContribution: number; status: string; minRiskScore: number;
-  onClick?: (e?: any) => void | Promise<void>;
+  onClick?: React.MouseEventHandler<HTMLDivElement>;
 }
 
 function badge(s: string) {

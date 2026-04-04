@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 interface Props {
@@ -9,17 +9,11 @@ interface Props {
 
 export default function StatCard({ label, value, suffix, icon, delay = 0, animate = true, accent }: Props) {
   const isNum = typeof value === "number";
-  const [d, setD] = useState(isNum && animate ? 0 : value);
   const ref = useRef<HTMLDivElement>(null);
   const [hovering, setHovering] = useState(false);
   const [rot, setRot] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    if (!isNum || !animate) { setD(value); return; }
-    const dur = 1200, s = Date.now();
-    const t = setInterval(() => { const p = Math.min((Date.now() - s) / dur, 1); setD(Math.round((1 - Math.pow(1 - p, 3)) * (value as number))); if (p >= 1) clearInterval(t); }, 16);
-    return () => clearInterval(t);
-  }, [value, isNum, animate]);
+  const displayValue = isNum ? Math.round(value) : value;
+  const valueTransition = animate ? "transform 0.25s ease" : "none";
 
   const onMove = (e: React.MouseEvent) => {
     if (!ref.current) return;
@@ -55,7 +49,7 @@ export default function StatCard({ label, value, suffix, icon, delay = 0, animat
           <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>{label}</span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-          <span style={{ fontSize: 28, fontWeight: 800, color: "var(--color-text)", letterSpacing: -1.5, lineHeight: 1 }}>{d}</span>
+          <span style={{ fontSize: 28, fontWeight: 800, color: "var(--color-text)", letterSpacing: -1.5, lineHeight: 1, transition: valueTransition }}>{displayValue}</span>
           {suffix && <span style={{ fontSize: 12, color: "var(--color-text-muted)", fontWeight: 500 }}>{suffix}</span>}
         </div>
       </div>
