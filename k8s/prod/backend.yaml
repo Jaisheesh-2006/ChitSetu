@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chitsetu-backend
+  namespace: chitsetu-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chitsetu-backend
+  template:
+    metadata:
+      labels:
+        app: chitsetu-backend
+    spec:
+      containers:
+        - name: backend
+          image: DOCKERHUB_NAMESPACE/chitsetu-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_VERSION
+              value: dev
+          envFrom:
+            - secretRef:
+                name: chitsetu-backend-env
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chitsetu-backend
+  namespace: chitsetu-prod
+spec:
+  selector:
+    app: chitsetu-backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

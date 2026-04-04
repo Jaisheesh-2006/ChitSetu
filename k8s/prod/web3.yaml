@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chitsetu-web3
+  namespace: chitsetu-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chitsetu-web3
+  template:
+    metadata:
+      labels:
+        app: chitsetu-web3
+    spec:
+      containers:
+        - name: web3
+          image: DOCKERHUB_NAMESPACE/chitsetu-web3:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8545
+          envFrom:
+            - secretRef:
+                name: chitsetu-web3-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chitsetu-web3
+  namespace: chitsetu-prod
+spec:
+  selector:
+    app: chitsetu-web3
+  ports:
+    - name: http
+      port: 8545
+      targetPort: 8545
+  type: ClusterIP

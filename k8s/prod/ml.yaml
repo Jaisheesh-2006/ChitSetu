@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chitsetu-ml
+  namespace: chitsetu-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chitsetu-ml
+  template:
+    metadata:
+      labels:
+        app: chitsetu-ml
+    spec:
+      containers:
+        - name: ml
+          image: DOCKERHUB_NAMESPACE/chitsetu-ml:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: chitsetu-ml-env
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chitsetu-ml
+  namespace: chitsetu-prod
+spec:
+  selector:
+    app: chitsetu-ml
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
