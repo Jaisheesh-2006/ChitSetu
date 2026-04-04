@@ -1,47 +1,86 @@
 import joblib
 import os
+import pandas as pd
 from app.scoring import get_score
 
-# Load model properly
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, "models", "history_model.pkl")
 
-history_model = joblib.load(MODEL_PATH)
+model = joblib.load(MODEL_PATH)
 
 def predict_history(user):
 
-    # Extract values from user input
+    # Raw input
     LIMIT_BAL = user["LIMIT_BAL"]
     AGE = user["AGE"]
-    PAY = user["PAY"]                 
-    BILL_AMT = user["BILL_AMT"]       
-    PAY_AMT = user["PAY_AMT"]         
+    PAY = user["PAY"]
+    BILL_AMT = user["BILL_AMT"]
+    PAY_AMT = user["PAY_AMT"]
 
-    # Feature engineering (same as training)
-    avg_bill = sum(BILL_AMT) / 6
-    avg_pay = sum(PAY_AMT) / 6
+    # 🔥 FEATURE ENGINEERING (AUTO FROM INPUT)
+
+    avg_bill = sum(BILL_AMT) / len(BILL_AMT)
+    avg_pay = sum(PAY_AMT) / len(PAY_AMT)
+
     utilization = avg_bill / (LIMIT_BAL + 1)
     payment_ratio = avg_pay / (avg_bill + 1)
-    delinquency = sum(PAY)
 
-    # FINAL feature vector (IMPORTANT: order must match training)
-    features = [[
+    late_count = sum(1 for p in PAY if p > 0)
+    max_delay = max(PAY)
+    severe_delay = sum(1 for p in PAY if p >= 2)
+    payment_gap = avg_bill - avg_pay
+
+    # 🔥 STRONG FEATURES
+    consistent_delay = int(all(p > 0 for p in PAY))
+    delay_weight = sum(p * 2 for p in PAY if p > 0)
+    underpayment = int(payment_ratio < 0.8)
+
+    # ✅ EXACT FEATURE ORDER (same as training)
+    df = pd.DataFrame([[
         LIMIT_BAL,
-        user.get("SEX", 1),
-        user.get("EDUCATION", 2),
-        user.get("MARRIAGE", 1),
         AGE,
-        *PAY,
-        *BILL_AMT,
-        *PAY_AMT,
         avg_bill,
         avg_pay,
         utilization,
         payment_ratio,
-        delinquency
-    ]]
+        late_count,
+        max_delay,
+        severe_delay,
+        payment_gap,
+        consistent_delay,
+        delay_weight,
+        underpayment
+    ]], columns=[
+        "LIMIT_BAL",
+        "AGE",
+        "avg_bill",
+        "avg_pay",
+        "utilization",
+        "payment_ratio",
+        "late_count",
+        "max_delay",
+        "severe_delay",
+        "payment_gap",
+        "consistent_delay",
+        "delay_weight",
+        "underpayment"
+    ])
 
-    # Predict probability of default
-    prob = float(history_model.predict_proba(features)[0][1])
+    # Predict
+    prob = float(model.predict_proba(df)[0][1])
+
+    # 🔥 BUSINESS LOGIC LAYER (VERY IMPORTANT)
+    penalty = 0
+
+    if late_count >= 4:
+        penalty += 0.15
+
+    if payment_ratio < 0.7:
+        penalty += 0.1
+
+    if consistent_delay == 1:
+        penalty += 0.2
+
+    prob = min(prob + penalty, 1.0)
 
     return get_score(prob)
