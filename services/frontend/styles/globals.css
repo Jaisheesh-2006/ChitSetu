@@ -126,6 +126,81 @@ body::before {
 .delay-7 { animation-delay: 0.7s; }
 .delay-8 { animation-delay: 0.8s; }
 
+/* ── Glitch Credit Card Loader ── */
+@keyframes glitch-1 {
+  0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+  10% { clip-path: inset(20% 0 60% 0); transform: translate(-4px, 2px); }
+  20% { clip-path: inset(50% 0 20% 0); transform: translate(4px, -1px); }
+  30% { clip-path: inset(10% 0 70% 0); transform: translate(-2px, 3px); }
+  40% { clip-path: inset(80% 0 5% 0); transform: translate(3px, -2px); }
+  50% { clip-path: inset(0 0 0 0); transform: translate(0); }
+}
+@keyframes glitch-2 {
+  0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+  15% { clip-path: inset(60% 0 10% 0); transform: translate(3px, 1px); }
+  25% { clip-path: inset(30% 0 40% 0); transform: translate(-3px, -2px); }
+  35% { clip-path: inset(70% 0 10% 0); transform: translate(2px, 3px); }
+  45% { clip-path: inset(5% 0 80% 0); transform: translate(-4px, -1px); }
+  55% { clip-path: inset(0 0 0 0); transform: translate(0); }
+}
+@keyframes glitch-color {
+  0%, 100% { opacity: 0; }
+  10% { opacity: 0.6; transform: translate(-3px, 0); }
+  20% { opacity: 0; }
+  50% { opacity: 0.4; transform: translate(3px, 0); }
+  60% { opacity: 0; }
+}
+@keyframes card-rotate-y {
+  0% { transform: perspective(800px) rotateY(-15deg) rotateX(5deg); }
+  50% { transform: perspective(800px) rotateY(15deg) rotateX(-3deg); }
+  100% { transform: perspective(800px) rotateY(-15deg) rotateX(5deg); }
+}
+@keyframes scan-line {
+  0% { top: -10%; }
+  100% { top: 110%; }
+}
+@keyframes loader-fade-out {
+  0% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+
+/* ── Coin Animations ── */
+@keyframes coin-float-1 {
+  0%, 100% { transform: translateY(0) rotateY(0deg) rotateX(10deg); }
+  25% { transform: translateY(-18px) rotateY(90deg) rotateX(5deg); }
+  50% { transform: translateY(-8px) rotateY(180deg) rotateX(-5deg); }
+  75% { transform: translateY(-22px) rotateY(270deg) rotateX(8deg); }
+}
+@keyframes coin-float-2 {
+  0%, 100% { transform: translateY(0) rotateY(180deg) rotateX(-5deg); }
+  30% { transform: translateY(-14px) rotateY(270deg) rotateX(10deg); }
+  60% { transform: translateY(-24px) rotateY(360deg) rotateX(0deg); }
+  80% { transform: translateY(-10px) rotateY(450deg) rotateX(-8deg); }
+}
+@keyframes coin-float-3 {
+  0%, 100% { transform: translateY(0) rotateY(90deg) scale(1); }
+  40% { transform: translateY(-20px) rotateY(200deg) scale(1.05); }
+  70% { transform: translateY(-30px) rotateY(310deg) scale(0.95); }
+}
+@keyframes coin-orbit {
+  0% { transform: rotate(0deg) translateX(60px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(60px) rotate(-360deg); }
+}
+@keyframes coin-orbit-reverse {
+  0% { transform: rotate(360deg) translateX(80px) rotate(-360deg); }
+  100% { transform: rotate(0deg) translateX(80px) rotate(0deg); }
+}
+@keyframes coin-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(249,115,22,0.2)); }
+  50% { filter: drop-shadow(0 0 20px rgba(249,115,22,0.5)); }
+}
+@keyframes particle-rise {
+  0% { opacity: 0; transform: translateY(20px) scale(0.5); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-60px) scale(0); }
+}
+
 /* ── Button ── */
 .glow-button {
   background: var(--gradient-primary);
