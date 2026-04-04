@@ -65,5 +65,9 @@ func SetupRouter(store *database.Store, authService *auth.Service) *gin.Engine {
 	usersGroup := router.Group("/users")
 	usersGroup.Use(authMiddleware)
 	usersGroup.GET("/profile", profileHandler.GetProfile)
+	usersGroup.GET("/risk-score", profileHandler.GetRiskScore)
+	usersGroup.GET("/kyc/status", profileHandler.GetKYCStatus)
+	usersGroup.GET("/me/funds", profileHandler.GetMyFunds)
+	usersGroup.GET("/me/contributions", profileHandler.GetMyContributions)
 	return router
 }

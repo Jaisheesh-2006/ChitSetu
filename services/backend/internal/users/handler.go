@@ -161,6 +161,103 @@ func (h *Handler) GetRiskScore(c *gin.Context) {
 	})
 }
 
+func (h *Handler) GetMyFunds(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+
+	memberships, err := h.repository.ListActiveMembershipsByUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch memberships"})
+		return
+	}
+	if len(memberships) == 0 {
+		c.JSON(http.StatusOK, []userFundResponse{})
+		return
+	}
+
+	response := make([]userFundResponse, 0, len(memberships))
+	for _, membership := range memberships {
+		fund, err := h.repository.GetFundByID(c.Request.Context(), membership.FundID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch funds"})
+			return
+		}
+		if fund == nil {
+			continue
+		}
+
+		memberCount, err := h.repository.CountActiveMembersByFund(c.Request.Context(), fund.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch member counts"})
+			return
+		}
+
+		response = append(response, userFundResponse{
+			ID:                  fund.ID,
+			Name:                fund.Name,
+			TotalAmount:         fund.TotalAmount,
+			MonthlyContribution: fund.MonthlyContribution,
+			DurationMonths:      fund.DurationMonths,
+			Status:              fund.Status,
+			StartDate:           fund.StartDate,
+			CreatorID:           fund.CreatorID,
+			CurrentMemberCount:  memberCount,
+			JoinedAt:            membership.JoinedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+func (h *Handler) GetMyContributions(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+
+	contributions, err := h.repository.ListContributionsByUser(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch contributions"})
+		return
+	}
+	if len(contributions) == 0 {
+		c.JSON(http.StatusOK, []userContributionResponse{})
+		return
+	}
+
+	response := make([]userContributionResponse, 0, len(contributions))
+	now := time.Now()
+	for _, contribution := range contributions {
+		fund, err := h.repository.GetFundByID(c.Request.Context(), contribution.FundID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to resolve contribution funds"})
+			return
+		}
+		fundName := ""
+		if fund != nil {
+			fundName = fund.Name
+		}
+
+		status := contribution.Status
+		if status != "paid" && contribution.DueDate.Before(now) {
+			status = "overdue"
+		}
+
+		response = append(response, userContributionResponse{
+			FundID:      contribution.FundID,
+			FundName:    fundName,
+			AmountDue:   contribution.AmountDue,
+			DueDate:     contribution.DueDate,
+			CycleNumber: contribution.CycleNumber,
+			Status:      status,
+		})
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func authenticatedUserID(c *gin.Context) (string, bool) {
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
