@@ -37,7 +37,7 @@ export default function ChitFundCard({ name, totalPool, totalMembers, monthlyCon
       onClick={onClick}
       style={{
         position: "relative", overflow: "hidden",
-        background: "var(--color-bg-card)", border: "none", borderRadius: 10, padding: "16px 18px",
+        background: "var(--color-bg-card)", border: "none", borderRadius: 10, padding: "20px 24px",
         cursor: onClick ? "pointer" : "default",
         boxShadow: hovering ? "var(--shadow-hover), var(--shadow-glow-sm)" : "var(--shadow-card)",
         transform: hovering ? `perspective(700px) rotateX(${rot.x}deg) rotateY(${rot.y}deg) translateY(-3px)` : "perspective(700px) rotateX(0) rotateY(0) translateY(0)",

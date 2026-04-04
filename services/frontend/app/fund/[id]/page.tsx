@@ -658,7 +658,7 @@ export default function FundDetailPage() {
                 depth={false}
                 padding="p-0"
                 delay={0.3}
-                style={{ marginBottom: 16 }}
+                style={{ marginBottom: 16, padding: "20px" }}
               >
                 <div style={{ padding: "18px 20px 4px" }}>
                   <div
@@ -881,8 +881,8 @@ export default function FundDetailPage() {
 
             {/* Members Table */}
             {members.length > 0 && (
-              <GlassCard hover={false} depth={false} padding="p-0" delay={0.35}>
-                <div style={{ padding: "18px 20px 4px" }}>
+              <GlassCard hover={false} depth={false} padding="p-0" delay={0.35} style={{ padding: "20px" }}>
+                <div style={{ marginBottom: 12 }}>
                   <h2
                     style={{
                       fontSize: 15,
@@ -1146,14 +1146,14 @@ export default function FundDetailPage() {
               }}
             >
               {/* Fund Summary Card */}
-              <GlassCard hover={true} depth={true} padding="p-5">
-                <div style={{ marginBottom: 18 }}>
+              <GlassCard hover={true} depth={true} padding="p-6" style={{ padding: "24px" }}>
+                <div style={{ marginBottom: 20 }}>
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 6,
-                      marginBottom: 10,
+                      gap: 8,
+                      marginBottom: 14,
                     }}
                   >
                     <div
@@ -1171,7 +1171,7 @@ export default function FundDetailPage() {
                         fontWeight: 700,
                         color: "var(--color-text-muted)",
                         textTransform: "uppercase",
-                        letterSpacing: 1,
+                        letterSpacing: 1.2,
                       }}
                     >
                       Summary
@@ -1182,8 +1182,8 @@ export default function FundDetailPage() {
                     style={{
                       background: "var(--color-bg-subtle)",
                       borderRadius: 8,
-                      padding: "14px 16px",
-                      marginBottom: 12,
+                      padding: "16px 18px",
+                      marginBottom: 16,
                       boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
                     }}
                   >
@@ -1193,16 +1193,16 @@ export default function FundDetailPage() {
                         fontWeight: 700,
                         color: "var(--color-text-muted)",
                         textTransform: "uppercase",
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.6,
                       }}
                     >
                       Total Pool
                     </span>
                     <p
                       style={{
-                        fontSize: 26,
+                        fontSize: 28,
                         fontWeight: 800,
-                        margin: "4px 0 0",
+                        margin: "6px 0 0",
                         letterSpacing: -1,
                         background: "var(--gradient-primary)",
                         WebkitBackgroundClip: "text",
@@ -1236,7 +1236,7 @@ export default function FundDetailPage() {
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        padding: "8px 0",
+                        padding: "10px 0",
                         borderBottom: "1px solid rgba(255,255,255,0.03)",
                       }}
                     >
@@ -1404,13 +1404,13 @@ export default function FundDetailPage() {
               </GlassCard>
 
               {/* ── Auction Card ── */}
-              <GlassCard hover={true} depth={true} padding="p-5">
+              <GlassCard hover={true} depth={true} padding="p-6" style={{ padding: "24px" }}>
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 6,
-                    marginBottom: 14,
+                    gap: 8,
+                    marginBottom: 16,
                   }}
                 >
                   <div
@@ -1432,7 +1432,7 @@ export default function FundDetailPage() {
                       fontWeight: 700,
                       color: "var(--color-text-muted)",
                       textTransform: "uppercase",
-                      letterSpacing: 1,
+                      letterSpacing: 1.2,
                     }}
                   >
                     Auction
@@ -1457,13 +1457,13 @@ export default function FundDetailPage() {
                 </div>
 
                 {auctionIsLive && auctionSnap?.session && (
-                  <div style={{ marginBottom: 14 }}>
+                  <div style={{ marginBottom: 16 }}>
                     <div
                       style={{
                         background: "var(--color-bg-subtle)",
                         borderRadius: 8,
-                        padding: "12px 16px",
-                        marginBottom: 10,
+                        padding: "16px 18px",
+                        marginBottom: 12,
                         boxShadow: "inset 0 1px 3px rgba(0,0,0,0.2)",
                       }}
                     >
@@ -1473,17 +1473,17 @@ export default function FundDetailPage() {
                           fontWeight: 700,
                           color: "var(--color-text-muted)",
                           textTransform: "uppercase",
-                          letterSpacing: 0.5,
+                          letterSpacing: 0.6,
                         }}
                       >
                         Current Discount
                       </span>
                       <p
                         style={{
-                          fontSize: 22,
+                          fontSize: 24,
                           fontWeight: 800,
                           color: "#ef4444",
-                          margin: "4px 0 0",
+                          margin: "6px 0 0",
                           letterSpacing: -0.5,
                         }}
                       >
@@ -1495,6 +1495,7 @@ export default function FundDetailPage() {
                         display: "flex",
                         justifyContent: "space-between",
                         fontSize: 12,
+                        marginBottom: 4,
                       }}
                     >
                       <span style={{ color: "var(--color-text-muted)" }}>
@@ -1536,8 +1537,8 @@ export default function FundDetailPage() {
                     style={{
                       background: "rgba(34,197,94,0.06)",
                       borderRadius: 8,
-                      padding: "12px 16px",
-                      marginBottom: 14,
+                      padding: "16px 18px",
+                      marginBottom: 16,
                     }}
                   >
                     <span
@@ -1546,7 +1547,7 @@ export default function FundDetailPage() {
                         fontWeight: 700,
                         color: "#22c55e",
                         textTransform: "uppercase",
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.6,
                       }}
                     >
                       Last Winner
@@ -1788,6 +1789,37 @@ export default function FundDetailPage() {
           incomingWsMessage={lastMessage}
         />
       )}
+
+      <style>{`
+        @media (max-width: 768px) {
+          main {
+            padding: 16px 12px !important;
+          }
+          [style*="flex: 1 1 500px"] {
+            min-width: 100% !important;
+            max-width: 100% !important;
+            flex-basis: 100% !important;
+          }
+          [style*="flex: 0 0 340px"] {
+            max-width: 100% !important;
+            position: relative !important;
+            top: auto !important;
+            flex: 1 1 auto !important;
+          }
+        }
+        @media (max-width: 480px) {
+          main {
+            padding: 12px 8px !important;
+          }
+          h1 {
+            font-size: 22px !important;
+          }
+          [style*="gridTemplateColumns: \"repeat(auto-fit, minmax(140px, 1fr))\""] {
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important;
+            gap: 8px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
