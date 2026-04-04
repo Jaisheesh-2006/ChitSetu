@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import ChitFundCard from "@/components/ChitFundCard";
@@ -7,11 +8,43 @@ import AnimatedButton from "@/components/ui/AnimatedButton";
 import { listFunds, type FundDetails } from "@/services/api";
 
 export default function FundsPage() {
+  const router = useRouter();
   const [funds, setFunds] = useState<FundDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { listFunds().then((d) => setFunds(d || [])).catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed")).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFunds = async () => {
+      if (cancelled) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await listFunds();
+        if (!cancelled) setFunds(data || []);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          const message = e instanceof Error ? e.message : "Failed to fetch funds";
+          setError(message);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void loadFunds();
+
+    const onPageShow = () => {
+      void loadFunds();
+    };
+
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, []);
 
   return (
     <div style={{ background: "var(--color-bg)", minHeight: "100vh" }}>
@@ -34,14 +67,14 @@ export default function FundsPage() {
             <span style={{ fontSize: 28 }}>💰</span>
             <p style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text)", margin: "8px 0 4px" }}>No Funds</p>
             <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 14 }}>Be the first to create one</p>
-            <AnimatedButton variant="primary" size="sm" onClick={() => { window.location.href = "/dashboard?tab=create" }}>Create Fund →</AnimatedButton>
+            <AnimatedButton variant="primary" size="sm" onClick={() => { router.push("/dashboard?tab=create"); }}>Create Fund →</AnimatedButton>
           </div>
         ) : (
           <motion.div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {funds.map((f) => {
               const isFull = (f.current_member_count ?? 0) >= (f.max_members ?? 0);
               const displayStatus = isFull ? "full" : f.status;
-              return <ChitFundCard key={f._id} id={f._id} name={f.name} totalPool={f.total_amount || 0} totalMembers={f.max_members || 0} monthlyContribution={f.monthly_contribution || 0} minRiskScore={0} status={displayStatus} onClick={() => { window.location.href = `/fund/${f._id}` }} />;
+              return <ChitFundCard key={f._id} id={f._id} name={f.name} totalPool={f.total_amount || 0} totalMembers={f.max_members || 0} monthlyContribution={f.monthly_contribution || 0} minRiskScore={0} status={displayStatus} onClick={() => { router.push(`/fund/${f._id}`); }} />;
             })}
           </motion.div>
         )}
