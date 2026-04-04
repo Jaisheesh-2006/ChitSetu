@@ -17,7 +17,6 @@ type createFundRequest struct {
 	Description         string  `json:"description" binding:"required"`
 	TotalAmount         float64 `json:"total_amount" binding:"required"`
 	MonthlyContribution float64 `json:"monthly_contribution" binding:"required"`
-	DurationMonths      int     `json:"duration_months" binding:"required"`
 	MaxMembers          int     `json:"max_members" binding:"required"`
 	StartDate           string  `json:"start_date" binding:"required"`
 }
@@ -56,7 +55,6 @@ func (h *Handler) CreateFund(c *gin.Context) {
 		Description:         req.Description,
 		TotalAmount:         req.TotalAmount,
 		MonthlyContribution: req.MonthlyContribution,
-		DurationMonths:      req.DurationMonths,
 		MaxMembers:          req.MaxMembers,
 		StartDate:           startDate,
 	})
@@ -121,6 +119,43 @@ func (h *Handler) Approve(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) Reject(c *gin.Context) {
+	organizerID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+
+	fundID := strings.TrimSpace(c.Param("id"))
+	var req approveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	result, err := h.service.RejectMember(c.Request.Context(), organizerID, fundID, strings.TrimSpace(req.UserID))
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) ApplicationStatus(c *gin.Context) {
+	userID, ok := authenticatedUserID(c)
+	if !ok {
+		return
+	}
+
+	fundID := strings.TrimSpace(c.Param("id"))
+	status, err := h.service.GetApplicationStatus(c.Request.Context(), userID, fundID)
+	if err != nil {
+		h.respondError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, status)
 }
 
 func (h *Handler) Members(c *gin.Context) {

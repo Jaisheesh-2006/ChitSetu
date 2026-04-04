@@ -80,7 +80,9 @@ func SetupRouter(store *database.Store, auctionHandler *auction.Handler, authSer
 	fundGroup.GET("", chitfundHandler.ListFunds)
 	fundGroup.GET("/:id", chitfundHandler.GetFund)
 	fundGroup.POST("/:id/apply", chitfundHandler.Apply)
+	fundGroup.GET("/:id/application-status", chitfundHandler.ApplicationStatus)
 	fundGroup.POST("/:id/approve", chitfundHandler.Approve)
+	fundGroup.POST("/:id/reject", chitfundHandler.Reject)
 	fundGroup.GET("/:id/members", chitfundHandler.Members)
 
 	paymentsGroup := router.Group("/payments")

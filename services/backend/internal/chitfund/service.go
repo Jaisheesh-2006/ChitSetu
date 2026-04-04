@@ -1,9 +1,14 @@
 package chitfund
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -11,7 +16,9 @@ import (
 )
 
 type Service struct {
-	repository *Repository
+	repository      *Repository
+	resendAPIKey    string
+	resendFromEmail string
 }
 
 type CreateFundInput struct {
@@ -27,6 +34,10 @@ type CreateFundInput struct {
 type AppError struct {
 	StatusCode int
 	Message    string
+}
+
+type ApplicationStatusResponse struct {
+	Status string `json:"status"`
 }
 
 type CurrentCycleContributions struct {
@@ -46,7 +57,9 @@ func NewService(
 ) *Service {
 
 	return &Service{
-		repository: repository,
+		repository:      repository,
+		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		resendFromEmail: strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
 	}
 }
 
@@ -62,9 +75,6 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 	}
 	if input.MonthlyContribution <= 0 {
 		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "monthly_contribution must be greater than 0"}
-	}
-	if input.DurationMonths <= 0 {
-		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "duration_months must be greater than 0"}
 	}
 	if input.MaxMembers < 2 {
 		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "max_members must be at least 2"}
@@ -88,6 +98,8 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "trust score is required before creating a fund"}
 	}
 
+	durationMonths := input.MaxMembers
+
 	now := time.Now()
 	id := uuid.NewString()
 
@@ -97,7 +109,7 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 		Description:         strings.TrimSpace(input.Description),
 		TotalAmount:         input.TotalAmount,
 		MonthlyContribution: input.MonthlyContribution,
-		DurationMonths:      input.DurationMonths,
+		DurationMonths:      durationMonths,
 		MaxMembers:          input.MaxMembers,
 		Status:              "open",
 		StartDate:           input.StartDate,
@@ -119,6 +131,22 @@ func (s *Service) CreateFund(ctx context.Context, creatorID string, input Create
 	}
 
 	return &FundWithCount{Fund: *created, CurrentMemberCount: 1}, nil
+}
+
+func (s *Service) GetApplicationStatus(ctx context.Context, userID, fundID string) (*ApplicationStatusResponse, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, &AppError{StatusCode: http.StatusUnauthorized, Message: "missing authenticated user"}
+	}
+	if strings.TrimSpace(fundID) == "" {
+		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "fund id is required"}
+	}
+
+	status, err := s.repository.GetMembershipStatus(ctx, fundID, userID)
+	if err != nil {
+		return nil, &AppError{StatusCode: http.StatusInternalServerError, Message: "failed to fetch application status"}
+	}
+
+	return &ApplicationStatusResponse{Status: status}, nil
 }
 
 func (s *Service) ListFunds(ctx context.Context) ([]FundWithCount, error) {
@@ -242,7 +270,104 @@ func (s *Service) ApproveMember(ctx context.Context, organizerUserID, fundID, ta
 		return nil, &AppError{StatusCode: http.StatusNotFound, Message: "pending application not found"}
 	}
 
+	if applicant, err := s.repository.GetFundUser(ctx, targetUserID); err != nil {
+		log.Printf("failed to load applicant user for approval email: %v", err)
+	} else if applicant != nil {
+		if err := s.sendMembershipDecisionEmail(ctx, applicant.Email, fund.Name, "approved"); err != nil {
+			log.Printf("failed to send approval email: %v", err)
+		}
+	}
+
 	return map[string]string{"message": "member approved", "user_id": targetUserID}, nil
+}
+
+func (s *Service) RejectMember(ctx context.Context, organizerUserID, fundID, targetUserID string) (map[string]string, error) {
+	if strings.TrimSpace(organizerUserID) == "" {
+		return nil, &AppError{StatusCode: http.StatusUnauthorized, Message: "missing authenticated user"}
+	}
+	if strings.TrimSpace(targetUserID) == "" {
+		return nil, &AppError{StatusCode: http.StatusBadRequest, Message: "user_id is required"}
+	}
+
+	fund, err := s.repository.GetFundByID(ctx, fundID)
+	if err != nil {
+		return nil, &AppError{StatusCode: http.StatusInternalServerError, Message: "failed to fetch fund"}
+	}
+	if fund == nil {
+		return nil, &AppError{StatusCode: http.StatusNotFound, Message: "fund not found"}
+	}
+	if fund.CreatorID != organizerUserID {
+		return nil, &AppError{StatusCode: http.StatusForbidden, Message: "only the fund creator can reject members"}
+	}
+
+	updated, err := s.repository.RejectPendingMember(ctx, fundID, targetUserID)
+	if err != nil {
+		return nil, &AppError{StatusCode: http.StatusInternalServerError, Message: "failed to reject member"}
+	}
+	if !updated {
+		return nil, &AppError{StatusCode: http.StatusNotFound, Message: "pending application not found"}
+	}
+
+	if applicant, err := s.repository.GetFundUser(ctx, targetUserID); err != nil {
+		log.Printf("failed to load applicant user for rejection email: %v", err)
+	} else if applicant != nil {
+		if err := s.sendMembershipDecisionEmail(ctx, applicant.Email, fund.Name, "rejected"); err != nil {
+			log.Printf("failed to send rejection email: %v", err)
+		}
+	}
+
+	return map[string]string{"message": "member rejected", "user_id": targetUserID}, nil
+}
+
+func (s *Service) sendMembershipDecisionEmail(ctx context.Context, toEmail, fundName, decision string) error {
+	recipient := strings.TrimSpace(toEmail)
+	if recipient == "" {
+		return nil
+	}
+
+	decisionLabel := "Approved"
+	if decision == "rejected" {
+		decisionLabel = "Rejected"
+	}
+	subject := fmt.Sprintf("Application %s for %s", decisionLabel, fundName)
+	textBody := fmt.Sprintf("Your application for the fund '%s' has been %s.", fundName, decision)
+
+	if s.resendAPIKey == "" || s.resendFromEmail == "" {
+		log.Printf("resend not configured, membership decision for %s (%s): %s", recipient, fundName, decision)
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"from":    s.resendFromEmail,
+		"to":      []string{recipient},
+		"subject": subject,
+		"text":    textBody,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal resend payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create resend request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.resendAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("call resend api: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("resend api returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }
 
 func (s *Service) GetCurrentCycleContributions(ctx context.Context, requesterUserID, fundID string) (*CurrentCycleContributions, error) {

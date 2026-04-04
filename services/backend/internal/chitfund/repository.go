@@ -111,8 +111,6 @@ func (r *Repository) CreateFund(ctx context.Context, fund Fund) (*Fund, error) {
 	return &fund, nil
 }
 
-
-
 func (r *Repository) ListOpenFunds(ctx context.Context) ([]Fund, error) {
 	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -210,6 +208,30 @@ func (r *Repository) HasMembershipRecord(ctx context.Context, fundID, userID str
 	return count > 0, nil
 }
 
+func (r *Repository) GetMembershipStatus(ctx context.Context, fundID, userID string) (string, error) {
+	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+
+	var member FundMember
+	err := r.membersCol.FindOne(
+		timedCtx,
+		bson.D{{Key: "fund_id", Value: fundID}, {Key: "user_id", Value: userID}},
+		options.FindOne().SetProjection(bson.D{{Key: "status", Value: 1}}),
+	).Decode(&member)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "none", nil
+		}
+		return "", fmt.Errorf("get membership status: %w", err)
+	}
+
+	if member.Status == "" {
+		return "none", nil
+	}
+
+	return member.Status, nil
+}
+
 func (r *Repository) HasActiveMembership(ctx context.Context, fundID, userID string) (bool, error) {
 	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
 	defer cancel()
@@ -260,6 +282,22 @@ func (r *Repository) ApprovePendingMember(ctx context.Context, fundID, userID st
 	if err != nil {
 		return false, fmt.Errorf("approve pending member: %w", err)
 	}
+	return result.MatchedCount > 0, nil
+}
+
+func (r *Repository) RejectPendingMember(ctx context.Context, fundID, userID string) (bool, error) {
+	timedCtx, cancel := context.WithTimeout(ctx, opTimeout)
+	defer cancel()
+
+	result, err := r.membersCol.UpdateOne(
+		timedCtx,
+		bson.D{{Key: "fund_id", Value: fundID}, {Key: "user_id", Value: userID}, {Key: "status", Value: "pending"}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "status", Value: "rejected"}}}},
+	)
+	if err != nil {
+		return false, fmt.Errorf("reject pending member: %w", err)
+	}
+
 	return result.MatchedCount > 0, nil
 }
 

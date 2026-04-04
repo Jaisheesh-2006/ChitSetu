@@ -26,7 +26,7 @@ export function getCurrentUserId(): string | null {
   const token = getAccessToken();
   if (!token) return null;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const payload = JSON.parse(atob(token.split(".")[1]));
     return payload.user_id || payload.sub || null;
   } catch {
     return null;
@@ -40,7 +40,10 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
   auth?: boolean;
 }
 
-async function fetchAPI<T = unknown>(path: string, options: FetchOptions = {}): Promise<T> {
+async function fetchAPI<T = unknown>(
+  path: string,
+  options: FetchOptions = {},
+): Promise<T> {
   const { body, auth = true, ...rest } = options;
 
   const headers: Record<string, string> = {
@@ -72,8 +75,12 @@ async function fetchAPI<T = unknown>(path: string, options: FetchOptions = {}): 
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!retryRes.ok) {
-        const err = await retryRes.json().catch(() => ({ error: "Request failed" }));
-        throw new Error(err.error || `Request failed with status ${retryRes.status}`);
+        const err = await retryRes
+          .json()
+          .catch(() => ({ error: "Request failed" }));
+        throw new Error(
+          err.error || `Request failed with status ${retryRes.status}`,
+        );
       }
       return retryRes.json();
     }
@@ -122,7 +129,10 @@ export interface TokenPair {
   expires_in_sec: number;
 }
 
-export async function authRegister(email: string, password: string): Promise<TokenPair> {
+export async function authRegister(
+  email: string,
+  password: string,
+): Promise<TokenPair> {
   return fetchAPI<TokenPair>("/auth/register", {
     method: "POST",
     body: { email, password },
@@ -130,7 +140,10 @@ export async function authRegister(email: string, password: string): Promise<Tok
   });
 }
 
-export async function authLogin(email: string, password: string): Promise<TokenPair> {
+export async function authLogin(
+  email: string,
+  password: string,
+): Promise<TokenPair> {
   return fetchAPI<TokenPair>("/auth/login", {
     method: "POST",
     body: { email, password },
@@ -138,15 +151,20 @@ export async function authLogin(email: string, password: string): Promise<TokenP
   });
 }
 
-export async function forgotPassword(email: string): Promise<{ token: string, message: string }> {
-  return fetchAPI<{ token: string, message: string }>("/auth/forgot-password", {
+export async function forgotPassword(
+  email: string,
+): Promise<{ token: string; message: string }> {
+  return fetchAPI<{ token: string; message: string }>("/auth/forgot-password", {
     method: "POST",
     body: { email },
     auth: false,
   });
 }
 
-export async function resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<{ message: string }> {
   return fetchAPI<{ message: string }>("/auth/reset-password", {
     method: "POST",
     body: { token, new_password: newPassword },
@@ -224,7 +242,6 @@ export interface CreateFundInput {
   description: string;
   total_amount: number;
   monthly_contribution: number;
-  duration_months: number;
   max_members: number;
   start_date: string;
 }
@@ -264,12 +281,38 @@ export interface ApplyResult {
   status: string;
 }
 
+export interface FundApplicationStatus {
+  status: "none" | "pending" | "active" | "rejected";
+}
+
 export async function applyToFund(fundId: string): Promise<ApplyResult> {
   return fetchAPI<ApplyResult>(`/funds/${fundId}/apply`, { method: "POST" });
 }
 
-export async function approveFundMember(fundId: string, memberId: string): Promise<void> {
-  return fetchAPI(`/funds/${fundId}/approve`, { method: "POST", body: { user_id: memberId } });
+export async function approveFundMember(
+  fundId: string,
+  memberId: string,
+): Promise<void> {
+  return fetchAPI(`/funds/${fundId}/approve`, {
+    method: "POST",
+    body: { user_id: memberId },
+  });
+}
+
+export async function rejectFundMember(
+  fundId: string,
+  memberId: string,
+): Promise<void> {
+  return fetchAPI(`/funds/${fundId}/reject`, {
+    method: "POST",
+    body: { user_id: memberId },
+  });
+}
+
+export async function getFundApplicationStatus(
+  fundId: string,
+): Promise<FundApplicationStatus> {
+  return fetchAPI<FundApplicationStatus>(`/funds/${fundId}/application-status`);
 }
 
 /* ── Payments API ── */
@@ -281,7 +324,9 @@ export interface SessionDetails {
   due_date: string;
 }
 
-export async function getPaymentSession(sessionId: string): Promise<SessionDetails> {
+export async function getPaymentSession(
+  sessionId: string,
+): Promise<SessionDetails> {
   return fetchAPI<SessionDetails>(`/payments/session/${sessionId}`);
 }
 
@@ -291,7 +336,9 @@ export interface CreateOrderResult {
   key_id: string;
 }
 
-export async function createPaymentOrder(sessionId: string): Promise<CreateOrderResult> {
+export async function createPaymentOrder(
+  sessionId: string,
+): Promise<CreateOrderResult> {
   return fetchAPI<CreateOrderResult>("/payments/create-order", {
     method: "POST",
     body: { session_id: sessionId },
@@ -314,7 +361,7 @@ export type KYCStatus =
   | "pending"
   | "pan_verified"
   | "credit_fetched"
-  | "ml_ready"      // legacy — backend normalises to 'verified'
+  | "ml_ready" // legacy — backend normalises to 'verified'
   | "verified";
 
 export interface KYCStatusData {
@@ -356,12 +403,15 @@ export async function getKYCStatus(): Promise<KYCStatusData> {
 }
 
 export async function verifyPAN(): Promise<PANVerifyResult> {
-  return fetchAPI<PANVerifyResult>("/user/kyc/verify-pan", { method: "POST", body: {} });
+  return fetchAPI<PANVerifyResult>("/user/kyc/verify-pan", {
+    method: "POST",
+    body: {},
+  });
 }
 
 export async function fetchKYCHistory(
   bankAccount: string,
-  ifscCode: string
+  ifscCode: string,
 ): Promise<FetchHistoryResult> {
   return fetchAPI<FetchHistoryResult>("/user/kyc/fetch-history", {
     method: "POST",
@@ -370,7 +420,10 @@ export async function fetchKYCHistory(
 }
 
 export async function runMLPrediction(): Promise<RunMLResult> {
-  return fetchAPI<RunMLResult>("/user/kyc/run-ml", { method: "POST", body: {} });
+  return fetchAPI<RunMLResult>("/user/kyc/run-ml", {
+    method: "POST",
+    body: {},
+  });
 }
 
 /* ── Auction API ── */
@@ -424,18 +477,30 @@ export interface AuctionSnapshot {
 }
 
 export async function startAuction(fundId: string): Promise<AuctionSession> {
-  return fetchAPI<AuctionSession>(`/funds/${fundId}/auction/start`, { method: "POST" });
-}
-
-export async function activateAuction(fundId: string): Promise<{ message: string }> {
-  return fetchAPI<{ message: string }>(`/funds/${fundId}/auction/activate`, { method: "POST" });
-}
-
-export async function placeBid(fundId: string, increment: number): Promise<{ bid: AuctionBid; auction: AuctionSession }> {
-  return fetchAPI<{ bid: AuctionBid; auction: AuctionSession }>(`/funds/${fundId}/auction/bid`, {
+  return fetchAPI<AuctionSession>(`/funds/${fundId}/auction/start`, {
     method: "POST",
-    body: { increment },
   });
+}
+
+export async function activateAuction(
+  fundId: string,
+): Promise<{ message: string }> {
+  return fetchAPI<{ message: string }>(`/funds/${fundId}/auction/activate`, {
+    method: "POST",
+  });
+}
+
+export async function placeBid(
+  fundId: string,
+  increment: number,
+): Promise<{ bid: AuctionBid; auction: AuctionSession }> {
+  return fetchAPI<{ bid: AuctionBid; auction: AuctionSession }>(
+    `/funds/${fundId}/auction/bid`,
+    {
+      method: "POST",
+      body: { increment },
+    },
+  );
 }
 
 export async function getAuction(fundId: string): Promise<AuctionSnapshot> {
@@ -451,7 +516,7 @@ export interface FundContributionEntry {
   amount_due: number;
   due_date: string;
   status: string;
-  blockchain_status ?: string;
+  blockchain_status?: string;
 }
 
 export interface CurrentCycleContributions {
@@ -462,8 +527,12 @@ export interface CurrentCycleContributions {
   current_member_count: number;
 }
 
-export async function getFundContributions(fundId: string): Promise<CurrentCycleContributions> {
-  return fetchAPI<CurrentCycleContributions>(`/funds/${fundId}/contributions/current`);
+export async function getFundContributions(
+  fundId: string,
+): Promise<CurrentCycleContributions> {
+  return fetchAPI<CurrentCycleContributions>(
+    `/funds/${fundId}/contributions/current`,
+  );
 }
 
 /* ── Web3 Wallet API ── */
@@ -504,16 +573,25 @@ export interface ChatMessage {
   created_at: string;
 }
 
-export async function getChatMessages(fundId: string, chatType: "fund" | "auction", cycleNumber?: number, limit = 50): Promise<ChatMessage[]> {
+export async function getChatMessages(
+  fundId: string,
+  chatType: "fund" | "auction",
+  cycleNumber?: number,
+  limit = 50,
+): Promise<ChatMessage[]> {
   let url = `/funds/${fundId}/chat?type=${chatType}&limit=${limit}`;
   if (cycleNumber !== undefined) url += `&cycle=${cycleNumber}`;
   return fetchAPI<ChatMessage[]>(url);
 }
 
-export async function sendChatMessage(fundId: string, chatType: "fund" | "auction", message: string, cycleNumber?: number): Promise<ChatMessage> {
+export async function sendChatMessage(
+  fundId: string,
+  chatType: "fund" | "auction",
+  message: string,
+  cycleNumber?: number,
+): Promise<ChatMessage> {
   return fetchAPI<ChatMessage>(`/funds/${fundId}/chat`, {
     method: "POST",
     body: { chat_type: chatType, message, cycle_number: cycleNumber },
   });
 }
-
