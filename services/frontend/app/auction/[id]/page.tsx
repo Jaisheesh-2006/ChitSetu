@@ -10,8 +10,7 @@ import ChatPanel from "@/components/ChatPanel";
 import { useAuctionSocket } from "@/hooks/useAuctionSocket";
 import {
     getAuction, placeBid as apiPlaceBid, getFundDetails, getFundMembers, activateAuction as apiActivateAuction,
-    getWalletHistory, getCurrentUserId, type AuctionSnapshot, type AuctionBid, type FundDetails,
-    type WalletHistoryEntry
+    getCurrentUserId, type AuctionSnapshot, type AuctionBid, type FundDetails
 } from "@/services/api";
 
 function fmt(n: number) {
@@ -47,28 +46,8 @@ export default function AuctionRoomPage() {
     const [isActivating, setIsActivating] = useState(false);
     const isCreator = fund && currentUserId === fund.creator_id;
 
-    // ── History Modal State ──
-    const [historyAddress, setHistoryAddress] = useState<string | null>(null);
-    // const [historyData, setHistoryData] = useState<WalletHistoryEntry[]>([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
-
-    const openHistory = async (addr: string) => {
-        if (!addr) return;
-        setHistoryAddress(addr);
-        setHistoryLoading(true);
-        try {
-            
-            setHistoryData(h);
-        } catch {
-            setHistoryData([]);
-        } finally {
-            setHistoryLoading(false);
-        }
-    };
-
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const lastBidTimeRef = useRef<number>(Date.now());
-    const bidFeedRef = useRef<HTMLDivElement>(null);
 
     // ── WebSocket ──
     const { lastMessage, isConnected, sendMessage } = useAuctionSocket(id);
@@ -181,6 +160,27 @@ export default function AuctionRoomPage() {
         }
     }, [lastMessage, fund]);
 
+    useEffect(() => {
+        if (!id || auctionStatus !== "ended") return;
+
+        void getAuction(id)
+            .then((snap) => {
+                setSnapshot(snap);
+                setBids(snap.bids || []);
+                if (snap.result) {
+                    setCurrentPrice(snap.result.winning_price);
+                    setWinnerInfo({
+                        userId: snap.result.winner_user_id,
+                        price: snap.result.winning_price,
+                        payout: snap.result.payout_amount,
+                    });
+                }
+            })
+            .catch(() => {
+                // fallback UI uses websocket payload if refetch fails
+            });
+    }, [id, auctionStatus]);
+
     // ── Countdown timer ──
     useEffect(() => {
         if (auctionStatus !== "live" || waitingForParticipants) {
@@ -243,10 +243,31 @@ export default function AuctionRoomPage() {
     );
 
     const totalPool = (fund?.monthly_contribution || 0) * (fund?.max_members || 0);
+    const maxAllowedDiscount = totalPool * 0.5;
+    const remainingDiscountCapacity = Math.max(0, maxAllowedDiscount - currentPrice);
+    const bidLimitReached = remainingDiscountCapacity <= 0;
+    const sameUserAsLeader = currentLeaderUserId === currentUserId;
+    const bidLocked = bidLoading || isSpectator || sameUserAsLeader || auctionStatus !== "live" || waitingForParticipants;
     const payoutRemaining = totalPool - currentPrice;
     const countdownPct = (countdown / IDLE_WINDOW) * 100;
     const countdownColor = countdown > 10 ? "#22c55e" : countdown > 5 ? "#f59e0b" : "#ef4444";
     const activeParticipantTarget = members.filter((m) => m.status === "active").length || (fund?.max_members || 0);
+    const memberCountForDividend = snapshot?.members_info?.length || activeParticipantTarget;
+    const fallbackDividend = memberCountForDividend > 1 ? currentPrice / (memberCountForDividend - 1) : 0;
+    const rawMemberDividendRows = winnerInfo
+        ? (snapshot?.members_info?.length
+            ? snapshot.members_info
+            : members.map((m) => ({ user_id: m.user_id, full_name: m.full_name, is_winner: m.user_id === winnerInfo.userId })))
+            .filter((m) => m.user_id !== winnerInfo.userId)
+            .map((m) => ({
+                userId: m.user_id,
+                fullName: m.full_name || members.find((x) => x.user_id === m.user_id)?.full_name || "Member",
+                dividend: "dividend" in m && typeof m.dividend === "number" ? m.dividend : fallbackDividend,
+            }))
+        : [];
+    const memberDividendRows = Array.from(
+        new Map(rawMemberDividendRows.map((row) => [`${row.userId || row.fullName}`, row])).values()
+    );
 
     return (
         <div style={{ background: "var(--color-bg)", minHeight: "100vh", color: "var(--color-text)" }}>
@@ -264,46 +285,6 @@ export default function AuctionRoomPage() {
             </div>
 
             <Navbar />
-
-            <AnimatePresence>
-                {historyAddress && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-                        onClick={() => setHistoryAddress(null)}>
-                        <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            style={{ background: "var(--color-bg-card)", borderRadius: 16, width: "100%", maxWidth: 500, maxHeight: "80vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "var(--shadow-elevated)" }}
-                            onClick={e => e.stopPropagation()}>
-                            <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                <div>
-                                    <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>On-Chain History</h3>
-                                    <code style={{ fontSize: 10, color: "var(--color-text-muted)" }}>{historyAddress}</code>
-                                </div>
-                                <button onClick={() => setHistoryAddress(null)} style={{ background: "transparent", border: "none", color: "var(--color-text-muted)", cursor: "pointer", fontSize: 24 }}>×</button>
-                            </div>
-                            <div style={{ padding: 20, overflowY: "auto", flex: 1 }}>
-                                {historyLoading ? (
-                                    <div style={{ textAlign: "center", padding: 40 }}><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.05)", borderTopColor: "var(--color-accent)", margin: "0 auto" }} /></div>
-                                ) : (
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                        {historyData.map((h, idx) => (
-                                            <div key={idx} style={{ padding: 12, borderRadius: 10, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
-                                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                                                    <span style={{ fontSize: 10, fontWeight: 700, color: h.type === "credit" ? "#22c55e" : "#ef4444", textTransform: "uppercase" }}>{h.type}</span>
-                                                    <span style={{ fontSize: 13, fontWeight: 800 }}>{h.type === "credit" ? "+" : "-"}{h.value.toLocaleString()} CHIT</span>
-                                                </div>
-                                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--color-text-muted)" }}>
-                                                    <span>{h.from.substring(0, 6)}... ➔ {h.to.substring(0, 6)}...</span>
-                                                    <a href={`https://explorer.sepolia.era.zksync.dev/tx/${h.tx_hash}`} target="_blank" style={{ color: "var(--color-accent)", textDecoration: "none" }}>Explorer →</a>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             <main style={{ position: "relative", zIndex: 1, maxWidth: 1100, margin: "0 auto", padding: "24px 20px" }}>
                 <AnimatePresence mode="wait">
@@ -410,7 +391,7 @@ export default function AuctionRoomPage() {
                                     <GlassCard hover={false} depth={false}>
                                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
                                             <div>
-                                                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>Bid Discount</span>
+                                                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 1 }}>Current Discount</span>
                                                 <p style={{ fontSize: 32, fontWeight: 900, color: "#ef4444", margin: "4px 0 0" }}>−{fmt(currentPrice)}</p>
                                             </div>
                                             <div style={{ textAlign: "right" }}>
@@ -419,20 +400,49 @@ export default function AuctionRoomPage() {
                                             </div>
                                         </div>
 
-                                        <div style={{ display: "flex", gap: 10 }}>
-                                            {INCREMENTS.map(inc => (
-                                                <button key={inc} onClick={() => handleBid(inc)} disabled={bidLoading || isSpectator || currentLeaderUserId === currentUserId}
-                                                    style={{
-                                                        flex: 1, padding: "20px 0", borderRadius: 12, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", color: "var(--color-text)", cursor: "pointer",
-                                                        opacity: (bidLoading || isSpectator || currentLeaderUserId === currentUserId) ? 0.4 : 1,
-                                                        transition: "all 0.2s"
-                                                    }}>
-                                                    <span style={{ display: "block", fontSize: 18, fontWeight: 800 }}>+{inc}</span>
-                                                    <span style={{ fontSize: 9, opacity: 0.6, textTransform: "uppercase" }}>Discount</span>
-                                                </button>
-                                            ))}
+                                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-text-muted)", marginBottom: 16 }}>
+                                            <span>Max discount cap (50% pool): {fmt(maxAllowedDiscount)}</span>
+                                            <span>Headroom left: {fmt(remainingDiscountCapacity)}</span>
                                         </div>
-                                        {isSpectator && <p style={{ fontSize: 11, color: "var(--color-text-muted)", textAlign: "center", marginTop: 12 }}>You win a previous cycle. Spectator Mode.</p>}
+
+                                        <div style={{ display: "flex", gap: 10 }}>
+                                            {INCREMENTS.map((inc) => {
+                                                const exceedsCap = currentPrice + inc > maxAllowedDiscount + 1e-9;
+                                                const disabled = bidLocked || exceedsCap;
+                                                return (
+                                                    <button key={inc} onClick={() => handleBid(inc)} disabled={disabled}
+                                                        style={{
+                                                            flex: 1,
+                                                            padding: "18px 0",
+                                                            borderRadius: 12,
+                                                            background: exceedsCap ? "rgba(239,68,68,0.06)" : "rgba(255,255,255,0.03)",
+                                                            border: exceedsCap ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(255,255,255,0.06)",
+                                                            color: "var(--color-text)",
+                                                            cursor: "pointer",
+                                                            opacity: disabled ? 0.4 : 1,
+                                                            transition: "all 0.2s"
+                                                        }}>
+                                                        <span style={{ display: "block", fontSize: 16, fontWeight: 800 }}>+{fmt(inc)}</span>
+                                                        <span style={{ fontSize: 9, opacity: 0.65, textTransform: "uppercase" }}>Next: −{fmt(currentPrice + inc)}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <p style={{ fontSize: 11, color: "var(--color-text-muted)", textAlign: "center", marginTop: 12 }}>
+                                            Cumulative mode: each bid adds to the current discount. Consecutive bids by the same member are blocked.
+                                        </p>
+                                        {sameUserAsLeader && auctionStatus === "live" && !isSpectator && (
+                                            <p style={{ fontSize: 11, color: "#f59e0b", textAlign: "center", marginTop: 10 }}>
+                                                You are leading. Wait for someone else to bid before bidding again.
+                                            </p>
+                                        )}
+                                        {bidLimitReached && (
+                                            <p style={{ fontSize: 11, color: "#f87171", textAlign: "center", marginTop: 10 }}>
+                                                Discount cap reached. No bids allowed above 50% of the monthly pool.
+                                            </p>
+                                        )}
+                                        {isSpectator && <p style={{ fontSize: 11, color: "var(--color-text-muted)", textAlign: "center", marginTop: 10 }}>You win a previous cycle. Spectator Mode.</p>}
                                         {bidError && <p style={{ fontSize: 11, color: "#ef4444", textAlign: "center", marginTop: 12 }}>{bidError}</p>}
                                     </GlassCard>
 
@@ -486,7 +496,7 @@ export default function AuctionRoomPage() {
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                         style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
                         <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }}
-                            style={{ background: "var(--color-bg-card)", borderRadius: 20, padding: 40, textAlign: "center", maxWidth: 460, width: "100%" }}>
+                            style={{ background: "var(--color-bg-card)", borderRadius: 20, padding: 32, textAlign: "center", maxWidth: 620, width: "100%" }}>
                             <div style={{ fontSize: 48, marginBottom: 16 }}>🏆</div>
                             <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Auction Complete!</h2>
                             <div style={{ background: "var(--color-bg-subtle)", borderRadius: 12, padding: 24, marginBottom: 24 }}>
@@ -504,6 +514,27 @@ export default function AuctionRoomPage() {
                                     </div>
                                 </div>
                             </div>
+
+                            <div style={{ background: "rgba(255,255,255,0.02)", borderRadius: 12, padding: 18, marginBottom: 20, textAlign: "left", border: "1px solid rgba(255,255,255,0.05)" }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--color-text-muted)", textTransform: "uppercase", letterSpacing: 0.8, margin: "0 0 10px" }}>
+                                    Dividend Distribution (Non-Winners)
+                                </p>
+                                {memberDividendRows.length === 0 ? (
+                                    <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: 0 }}>
+                                        No non-winner dividend records found.
+                                    </p>
+                                ) : (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                        {memberDividendRows.map((row) => (
+                                            <div key={row.userId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 10, background: "rgba(255,255,255,0.03)" }}>
+                                                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text)" }}>{row.fullName}</span>
+                                                <span style={{ fontSize: 13, fontWeight: 800, color: "#22c55e" }}>+{fmt(row.dividend)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             <AnimatedButton variant="primary" fullWidth onClick={() => router.push(`/fund/${id}`)}>Back to Fund Panel</AnimatedButton>
                         </motion.div>
                     </motion.div>

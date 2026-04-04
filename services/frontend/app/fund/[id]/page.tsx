@@ -224,6 +224,27 @@ export default function FundDetailPage() {
     return () => clearInterval(interval);
   }, [id, currentUserId]);
 
+  useEffect(() => {
+    if (!id || !lastMessage) return;
+
+    const shouldRefreshAuction =
+      lastMessage.type === "auction_started" ||
+      lastMessage.type === "bidding_started" ||
+      lastMessage.type === "auction_ended";
+
+    if (!shouldRefreshAuction) return;
+
+    void getAuction(id)
+      .then((next) => setAuctionSnap(next))
+      .catch(() => {
+        // polling will eventually heal transient failures
+      });
+
+    if (lastMessage.type === "auction_started") {
+      router.refresh();
+    }
+  }, [id, lastMessage, router]);
+
   // Monitor isMember and clear applyResult when user becomes active
   useEffect(() => {
     if (isMember && applyResult) {

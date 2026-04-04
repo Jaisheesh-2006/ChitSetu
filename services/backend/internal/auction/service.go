@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -21,14 +22,14 @@ const (
 )
 
 type Service struct {
-	repo            *Repository
-	wsManager       *ws.Manager
-	httpClient      *http.Client
-	payoutMode      string
-	keyID           string
-	keySecret       string
-	accountNo       string
-	fundAcctID      string
+	repo       *Repository
+	wsManager  *ws.Manager
+	httpClient *http.Client
+	payoutMode string
+	keyID      string
+	keySecret  string
+	accountNo  string
+	fundAcctID string
 }
 
 type PlaceBidInput struct {
@@ -43,14 +44,14 @@ func NewService(repo *Repository, wsManager *ws.Manager) *Service {
 		mode = "simulate"
 	}
 	return &Service{
-		repo:            repo,
-		wsManager:       wsManager,
-		httpClient:      &http.Client{Timeout: 20 * time.Second},
-		payoutMode:      mode,
-		keyID:           strings.TrimSpace(os.Getenv("RAZORPAY_KEY_ID")),
-		keySecret:       strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
-		accountNo:       strings.TrimSpace(os.Getenv("RAZORPAY_X_ACCOUNT_NUMBER")),
-		fundAcctID:      strings.TrimSpace(os.Getenv("RAZORPAY_PAYOUT_FUND_ACCOUNT_ID")),
+		repo:       repo,
+		wsManager:  wsManager,
+		httpClient: &http.Client{Timeout: 20 * time.Second},
+		payoutMode: mode,
+		keyID:      strings.TrimSpace(os.Getenv("RAZORPAY_KEY_ID")),
+		keySecret:  strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
+		accountNo:  strings.TrimSpace(os.Getenv("RAZORPAY_X_ACCOUNT_NUMBER")),
+		fundAcctID: strings.TrimSpace(os.Getenv("RAZORPAY_PAYOUT_FUND_ACCOUNT_ID")),
 	}
 }
 
@@ -209,6 +210,19 @@ func (s *Service) PlaceBid(ctx context.Context, input PlaceBidInput) (*Bid, *Auc
 		"timestamp":        bid.CreatedAt,
 	})
 
+	fund, fundErr := s.repo.GetFundByID(ctx, input.FundID)
+	if fundErr == nil {
+		activeMembers, membersErr := s.repo.CountActiveMembers(ctx, input.FundID)
+		if membersErr == nil && activeMembers > 0 {
+			discountCap := fund.MonthlyContribution * float64(activeMembers) * 0.5
+			if updatedSession.CurrentPrice >= discountCap-1e-9 {
+				if _, _, finalizeErr := s.FinalizeAuction(ctx, input.FundID, updatedSession.CycleNumber); finalizeErr != nil && !errors.Is(finalizeErr, ErrAuctionNotFinalized) {
+					log.Printf("auto-finalize at discount cap failed fund=%s cycle=%d: %v", input.FundID, updatedSession.CycleNumber, finalizeErr)
+				}
+			}
+		}
+	}
+
 	return bid, updatedSession, nil
 }
 
@@ -293,7 +307,6 @@ func (s *Service) FinalizeAuction(ctx context.Context, fundID string, cycleNumbe
 		"payout":         result.PayoutAmount,
 	})
 
-	
 	if err := s.TriggerPayout(context.Background(), fundID, cycleNumber, result.WinnerUserID, result.PayoutAmount); err != nil {
 		log.Printf("trigger payout failed for fund=%s cycle=%d: %v", fundID, cycleNumber, err)
 	}

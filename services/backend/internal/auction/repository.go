@@ -24,6 +24,7 @@ var (
 	ErrContributionUnpaid          = errors.New("user contribution for this cycle is not paid")
 	ErrUserAlreadyWon              = errors.New("user already won in this fund")
 	ErrInvalidIncrement            = errors.New("increment must be one of 10, 100, 200")
+	ErrDiscountCapExceeded         = errors.New("discount cap reached (max 50% of the monthly pool)")
 	ErrNoEligibleWinner            = errors.New("no eligible winner found")
 	ErrAuctionNotFinalized         = errors.New("auction finalization preconditions not met")
 	ErrConsecutiveBid              = errors.New("you are currently leading — wait until someone surpasses your best bid")
@@ -93,10 +94,10 @@ type PayoutRecord struct {
 }
 
 type MemberProfileInfo struct {
-	UserID   string  `json:"user_id"`
-	FullName string  `json:"full_name"`
-	IsWinner bool    `json:"is_winner"`
-	Dividend float64 `json:"dividend,omitempty"`
+	UserID   string  `bson:"user_id" json:"user_id"`
+	FullName string  `bson:"full_name" json:"full_name"`
+	IsWinner bool    `bson:"is_winner,omitempty" json:"is_winner"`
+	Dividend float64 `bson:"dividend,omitempty" json:"dividend,omitempty"`
 }
 
 type AuctionSnapshot struct {
@@ -158,6 +159,24 @@ func (r *Repository) GetMembersProfileInfo(ctx context.Context, fundID string) (
 			"as":           "profile",
 		}}},
 		{{Key: "$unwind", Value: bson.M{"path": "$profile", "preserveNullAndEmptyArrays": true}}},
+		{{Key: "$project", Value: bson.M{
+			"user_id": "$user_id",
+			"full_name": bson.M{
+				"$ifNull": bson.A{"$profile.full_name", "Member"},
+			},
+		}}},
+		{{Key: "$group", Value: bson.M{
+			"_id":       "$user_id",
+			"full_name": bson.M{"$first": "$full_name"},
+		}}},
+		{{Key: "$project", Value: bson.M{
+			"_id":     0,
+			"user_id": "$_id",
+			"full_name": bson.M{
+				"$ifNull": bson.A{"$full_name", "Member"},
+			},
+		}}},
+		{{Key: "$sort", Value: bson.M{"full_name": 1}}},
 	}
 
 	cursor, err := r.membersCol.Aggregate(timedCtx, pipeline)
@@ -334,73 +353,49 @@ func (r *Repository) PlaceIncrementBid(ctx context.Context, fundID, userID strin
 			return nil, ErrConsecutiveBid
 		}
 
-		// Aggregate this user's existing discount total for this auction cycle
-		pipeline := mongo.Pipeline{
-			{{Key: "$match", Value: bson.M{
-				"fund_id":      fundID,
-				"cycle_number": live.CycleNumber,
-				"user_id":      userID,
-			}}},
-			{{Key: "$group", Value: bson.M{
-				"_id":   nil,
-				"total": bson.M{"$sum": "$increment"},
-			}}},
-		}
-		cur, err := r.bidsCol.Aggregate(sc, pipeline)
+		var fund fundProjection
+		err = r.fundsCol.FindOne(
+			sc,
+			bson.M{"_id": fundID},
+			options.FindOne().SetProjection(bson.M{"monthly_contribution": 1}),
+		).Decode(&fund)
 		if err != nil {
-			return nil, fmt.Errorf("aggregate user bid total: %w", err)
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, fmt.Errorf("fund not found")
+			}
+			return nil, fmt.Errorf("load fund for cap check: %w", err)
 		}
-		var aggResult []struct {
-			Total float64 `bson:"total"`
-		}
-		if err := cur.All(sc, &aggResult); err != nil {
-			return nil, fmt.Errorf("decode user bid total: %w", err)
-		}
-		var existingUserTotal float64
-		if len(aggResult) > 0 {
-			existingUserTotal = aggResult[0].Total
-		}
-		newUserTotal := existingUserTotal + increment
 
-		// Only update the session's current_price if this user is now the new leader
-		auctionPrice := live.CurrentPrice
-		if newUserTotal > live.CurrentPrice {
-			auctionPrice = newUserTotal
-			err = r.auctionSessionsCol.FindOneAndUpdate(
-				sc,
-				bson.M{"fund_id": fundID, "cycle_number": live.CycleNumber, "status": "live"},
-				bson.M{"$set": bson.M{
-					"current_price":    newUserTotal,
-					"last_bid_user_id": userID,
-					"last_bid_at":      now,
-					"updated_at":       now,
-				}},
-				options.FindOneAndUpdate().SetReturnDocument(options.After),
-			).Decode(updatedSession)
-			if err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrAuctionNotLive
-				}
-				return nil, fmt.Errorf("atomic auction leader update: %w", err)
+		activeMembers, err := r.membersCol.CountDocuments(sc, bson.M{"fund_id": fundID, "status": "active"})
+		if err != nil {
+			return nil, fmt.Errorf("count active members for cap check: %w", err)
+		}
+		if activeMembers == 0 {
+			return nil, fmt.Errorf("no active members")
+		}
+
+		maxDiscount := fund.MonthlyContribution * float64(activeMembers) * 0.5
+		nextAuctionPrice := live.CurrentPrice + increment
+		if nextAuctionPrice > maxDiscount+1e-9 {
+			return nil, ErrDiscountCapExceeded
+		}
+
+		err = r.auctionSessionsCol.FindOneAndUpdate(
+			sc,
+			bson.M{"fund_id": fundID, "cycle_number": live.CycleNumber, "status": "live"},
+			bson.M{"$set": bson.M{
+				"current_price":    nextAuctionPrice,
+				"last_bid_user_id": userID,
+				"last_bid_at":      now,
+				"updated_at":       now,
+			}},
+			options.FindOneAndUpdate().SetReturnDocument(options.After),
+		).Decode(updatedSession)
+		if err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, ErrAuctionNotLive
 			}
-		} else {
-			// Keep the existing leader, but refresh last_bid_at so the 20s window resets on every accepted bid.
-			err = r.auctionSessionsCol.FindOneAndUpdate(
-				sc,
-				bson.M{"fund_id": fundID, "cycle_number": live.CycleNumber, "status": "live"},
-				bson.M{"$set": bson.M{
-					"last_bid_at": now,
-					"updated_at":  now,
-				}},
-				options.FindOneAndUpdate().SetReturnDocument(options.After),
-			).Decode(updatedSession)
-			if err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrAuctionNotLive
-				}
-				return nil, fmt.Errorf("refresh auction idle timer: %w", err)
-			}
-			auctionPrice = updatedSession.CurrentPrice
+			return nil, fmt.Errorf("update cumulative auction discount: %w", err)
 		}
 
 		// Record the bid event
@@ -410,7 +405,7 @@ func (r *Repository) PlaceIncrementBid(ctx context.Context, fundID, userID strin
 			CycleNumber:    live.CycleNumber,
 			UserID:         userID,
 			Increment:      increment,
-			ResultingPrice: auctionPrice, // stores the auction-wide leading discount
+			ResultingPrice: updatedSession.CurrentPrice,
 			CreatedAt:      now,
 		}
 		if _, err := r.bidsCol.InsertOne(sc, createdBid); err != nil {

@@ -319,7 +319,7 @@ function PaymentFlow() {
 
     if (error) {
         return (
-            <div className="mx-auto max-w-md pt-12">
+            <div className="mx-auto w-full max-w-md">
                 <GlassCard hover={false} padding="p-6">
                     <div className="text-center">
                         <div
@@ -374,7 +374,7 @@ function PaymentFlow() {
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="mx-auto max-w-md pt-12 text-center"
+                className="mx-auto w-full max-w-md text-center"
             >
                 <GlassCard hover={false} glow padding="p-8">
                     <motion.div
@@ -447,8 +447,8 @@ function PaymentFlow() {
     }
 
     return (
-        <div className="mx-auto max-w-lg pt-8">
-            <motion.div {...fadeUp} className="mb-8">
+        <div className="mx-auto w-full max-w-xl">
+            <motion.div {...fadeUp} className="mb-7 text-center sm:text-left">
                 <h1
                     style={{
                         fontSize: 32,
@@ -584,7 +584,7 @@ export default function PaymentPage() {
                 }}
             />
             <Navbar />
-            <main className="relative z-10 app-container py-10 sm:py-12">
+            <main className="relative z-10 flex min-h-[calc(100vh-52px)] items-center justify-center px-4 py-8 sm:py-10">
                 <Suspense
                     fallback={
                         <div className="flex min-h-[50vh] items-center justify-center">
