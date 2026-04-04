@@ -16,10 +16,11 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+const resendFromAddress = "Acme <onboarding@resend.dev>"
+
 type Service struct {
-	repository      *Repository
-	resendAPIKey    string
-	resendFromEmail string
+	repository   *Repository
+	resendAPIKey string
 }
 
 type CreateFundInput struct {
@@ -58,9 +59,8 @@ func NewService(
 ) *Service {
 
 	return &Service{
-		repository:      repository,
-		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		resendFromEmail: strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
+		repository:   repository,
+		resendAPIKey: strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 	}
 }
 
@@ -468,13 +468,13 @@ func (s *Service) sendMembershipDecisionEmail(ctx context.Context, toEmail, fund
 	subject := fmt.Sprintf("Application %s for %s", decisionLabel, fundName)
 	textBody := fmt.Sprintf("Your application for the fund '%s' has been %s.", fundName, decision)
 
-	if s.resendAPIKey == "" || s.resendFromEmail == "" {
+	if s.resendAPIKey == "" {
 		log.Printf("resend not configured, membership decision for %s (%s): %s", recipient, fundName, decision)
 		return nil
 	}
 
 	payload := map[string]interface{}{
-		"from":    s.resendFromEmail,
+		"from":    resendFromAddress,
 		"to":      []string{recipient},
 		"subject": subject,
 		"text":    textBody,
@@ -515,13 +515,13 @@ func (s *Service) sendFundDeletedEmail(ctx context.Context, toEmail, fundName, r
 	subject := fmt.Sprintf("Fund Deleted: %s", fundName)
 	textBody := reason
 
-	if s.resendAPIKey == "" || s.resendFromEmail == "" {
+	if s.resendAPIKey == "" {
 		log.Printf("resend not configured, fund deletion notice for %s (%s): %s", recipient, fundName, reason)
 		return nil
 	}
 
 	payload := map[string]interface{}{
-		"from":    s.resendFromEmail,
+		"from":    resendFromAddress,
 		"to":      []string{recipient},
 		"subject": subject,
 		"text":    textBody,

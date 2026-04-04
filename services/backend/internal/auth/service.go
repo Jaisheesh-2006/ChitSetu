@@ -27,17 +27,18 @@ import (
 
 var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
+const resendFromAddress = "Acme <onboarding@resend.dev>"
+
 type Service struct {
-	usersCol        *mongo.Collection
-	sessionCol      *mongo.Collection
-	jwtSecret       []byte
-	accessTTL       time.Duration
-	refreshTTL      time.Duration
-	resetTokenCol   *mongo.Collection
-	appBaseURL      string
-	resendAPIKey    string
-	resendFromEmail string
-	httpClient      *http.Client
+	usersCol      *mongo.Collection
+	sessionCol    *mongo.Collection
+	jwtSecret     []byte
+	accessTTL     time.Duration
+	refreshTTL    time.Duration
+	resetTokenCol *mongo.Collection
+	appBaseURL    string
+	resendAPIKey  string
+	httpClient    *http.Client
 }
 type userDocument struct {
 	ID               string    `bson:"_id"`
@@ -86,16 +87,15 @@ func NewService(db *mongo.Database) *Service {
 	}
 
 	return &Service{
-		usersCol:        db.Collection("users"),
-		sessionCol:      db.Collection("auth_sessions"),
-		resetTokenCol:   db.Collection("password_reset_tokens"),
-		jwtSecret:       []byte(secret),
-		accessTTL:       15 * time.Minute,
-		refreshTTL:      7 * 24 * time.Hour,
-		appBaseURL:      strings.TrimRight(baseURL, "/"),
-		resendAPIKey:    strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		resendFromEmail: strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
-		httpClient:      &http.Client{Timeout: 10 * time.Second},
+		usersCol:      db.Collection("users"),
+		sessionCol:    db.Collection("auth_sessions"),
+		resetTokenCol: db.Collection("password_reset_tokens"),
+		jwtSecret:     []byte(secret),
+		accessTTL:     15 * time.Minute,
+		refreshTTL:    7 * 24 * time.Hour,
+		appBaseURL:    strings.TrimRight(baseURL, "/"),
+		resendAPIKey:  strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
+		httpClient:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 func (s *Service) JWTSecret() []byte {
@@ -375,9 +375,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) (strin
 	resetLink := fmt.Sprintf("%s/reset-password?token=%s", s.appBaseURL, token)
 	log.Printf("Password reset link for %s: %s", email, resetLink)
 
-	// if s.resendAPIKey != "" && s.resendFromEmail != "" {
-	// 	_ = s.sendPasswordResetEmail(email, resetLink)
-	// }
+	if s.resendAPIKey != "" {
+		_ = s.sendPasswordResetEmail(email, resetLink)
+	}
 
 	return token, nil
 }
@@ -419,7 +419,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 
 func (s *Service) sendPasswordResetEmail(toEmail, resetLink string) error {
 	payload := map[string]any{
-		"from":    s.resendFromEmail,
+		"from":    resendFromAddress,
 		"to":      []string{toEmail},
 		"subject": "Reset Your ChitSetu Password",
 		"html":    fmt.Sprintf("<p>You requested a password reset.</p><p>Click the link below to set a new password:</p><p><a href=\"%s\">Reset Password</a></p><p>This link will expire in 1 hour.</p>", resetLink),

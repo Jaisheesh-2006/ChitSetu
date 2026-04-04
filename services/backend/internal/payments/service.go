@@ -19,6 +19,8 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+const resendFromAddress = "Acme <onboarding@resend.dev>"
+
 type Service struct {
 	repo                 *Repository
 	httpClient           *http.Client
@@ -26,7 +28,6 @@ type Service struct {
 	razorpayKeySecret    string
 	appBaseURL           string
 	resendAPIKey         string
-	resendFromEmail      string
 	defaultReminderEmail string
 }
 
@@ -62,7 +63,6 @@ func NewService(repo *Repository) *Service {
 		razorpayKeySecret:    strings.TrimSpace(os.Getenv("RAZORPAY_KEY_SECRET")),
 		appBaseURL:           strings.TrimRight(baseURL, "/"),
 		resendAPIKey:         strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
-		resendFromEmail:      strings.TrimSpace(os.Getenv("RESEND_FROM_EMAIL")),
 		defaultReminderEmail: strings.TrimSpace(os.Getenv("PAYMENT_REMINDER_FALLBACK_EMAIL")),
 	}
 }
@@ -297,13 +297,13 @@ func (s *Service) sendReminderEmail(ctx context.Context, toEmail, paymentLink st
 	if recipient == "" {
 		return nil
 	}
-	if s.resendAPIKey == "" || s.resendFromEmail == "" {
+	if s.resendAPIKey == "" {
 		log.Printf("resend not configured, reminder link for %s: %s", recipient, paymentLink)
 		return nil
 	}
 
 	payload := map[string]any{
-		"from":    s.resendFromEmail,
+		"from":    resendFromAddress,
 		"to":      []string{recipient},
 		"subject": "Contribution Payment Reminder",
 		"html":    fmt.Sprintf("<p>Your contribution payment is due soon.</p><p><a href=\"%s\">Pay Now</a></p>", paymentLink),
