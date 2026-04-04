@@ -192,7 +192,7 @@ export default function LoginPage() {
                             fontWeight: 600, cursor: "pointer", padding: 0,
                           }}
                         >
-                          Forgot?
+                          Forgot Password?
                         </button>
                       )}
                     </div>

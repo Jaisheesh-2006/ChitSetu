@@ -7,6 +7,8 @@ import ChitFundCard from "@/components/ChitFundCard";
 import AnimatedButton from "@/components/ui/AnimatedButton";
 import { listFunds, type FundDetails } from "@/services/api";
 
+const AUTO_REFRESH_MS = 8000;
+
 export default function FundsPage() {
   const router = useRouter();
   const [funds, setFunds] = useState<FundDetails[]>([]);
@@ -16,33 +18,61 @@ export default function FundsPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadFunds = async () => {
+    const loadFunds = async (
+      showLoader: boolean,
+      showErrorBanner: boolean,
+    ) => {
       if (cancelled) return;
-      setLoading(true);
-      setError(null);
+      if (showLoader) {
+        setLoading(true);
+      }
       try {
         const data = await listFunds();
-        if (!cancelled) setFunds(data || []);
-      } catch (e: unknown) {
         if (!cancelled) {
+          setFunds(data || []);
+          setError(null);
+        }
+      } catch (e: unknown) {
+        if (!cancelled && showErrorBanner) {
           const message = e instanceof Error ? e.message : "Failed to fetch funds";
           setError(message);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && showLoader) setLoading(false);
       }
     };
 
-    void loadFunds();
+    void loadFunds(true, true);
 
     const onPageShow = () => {
-      void loadFunds();
+      void loadFunds(false, false);
     };
 
+    const onFocus = () => {
+      void loadFunds(false, false);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void loadFunds(false, false);
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void loadFunds(false, false);
+      }
+    }, AUTO_REFRESH_MS);
+
     window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
       window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, []);
 

@@ -686,7 +686,7 @@ export default function LandingPage() {
                 style={{ fontSize: 16, color: "var(--color-text-secondary)", lineHeight: 1.8, maxWidth: 440, margin: "0 0 32px" }}
               >
                 A transparent, digital chit fund platform powered by machine learning risk scoring,
-                real-time blockchain auctions, and bank-grade secure payments.
+                real-time blockchain contribution & payouts, and bank-grade secure payments.
               </motion.p>
 
               <motion.div
