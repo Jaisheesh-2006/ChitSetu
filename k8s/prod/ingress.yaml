@@ -6,7 +6,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: chitsetu-hackbyte.duckdns.org # Replace with your actual domain or subdomain
+    - host: chitsetu-hackbyte.duckdns.org
       http:
         paths:
           - path: /api
