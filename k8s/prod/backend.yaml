@@ -12,6 +12,9 @@ spec:
     metadata:
       labels:
         app: chitsetu-backend
+      annotations:
+        reloader.stakater.com/auto: "true"
+        secret.reloader.stakater.com/reload: "chitsetu-backend-env"
     spec:
       containers:
         - name: backend

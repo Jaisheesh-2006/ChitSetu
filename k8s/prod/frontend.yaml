@@ -12,6 +12,9 @@ spec:
     metadata:
       labels:
         app: chitsetu-frontend
+      annotations:
+        reloader.stakater.com/auto: "true"
+        secret.reloader.stakater.com/reload: "chitsetu-frontend-env"
     spec:
       containers:
         - name: frontend

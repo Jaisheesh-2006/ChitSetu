@@ -9,7 +9,7 @@ This repo contains:
 - A Python ML service (credit-risk and trust score inference)
 
 ## Table of Contents
-
+- [Superplane Demonstration](#superplane-demonstration)
 - [Project Vision](#project-vision)
 - [Primary Use Cases](#primary-use-cases)
 - [Architecture Overview](#architecture-overview)
@@ -26,6 +26,11 @@ This repo contains:
 - [Current Gaps and Roadmap Notes](#current-gaps-and-roadmap-notes)
 - [Security and Compliance Notes](#security-and-compliance-notes)
 - [Testing and Validation](#testing-and-validation)
+
+
+## Superplane-demonstration
+
+Google drive link : https://docs.google.com/videos/d/1z8-xmYAc7Tqz1i4cxgaiaumzFqQ25THixbSkvfHacGI/edit?usp=sharing
 
 ## Project Vision
 

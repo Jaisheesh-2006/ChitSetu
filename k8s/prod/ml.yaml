@@ -12,6 +12,9 @@ spec:
     metadata:
       labels:
         app: chitsetu-ml
+      annotations:
+        reloader.stakater.com/auto: "true"
+        secret.reloader.stakater.com/reload: "chitsetu-ml-env"
     spec:
       containers:
         - name: ml

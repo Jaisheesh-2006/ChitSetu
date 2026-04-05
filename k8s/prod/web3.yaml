@@ -12,6 +12,9 @@ spec:
     metadata:
       labels:
         app: chitsetu-web3
+      annotations:
+        reloader.stakater.com/auto: "true"
+        secret.reloader.stakater.com/reload: "chitsetu-web3-env"
     spec:
       containers:
         - name: web3
