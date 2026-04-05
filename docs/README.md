@@ -1,6 +1,6 @@
 # Documentation
 
-Project architecture, setup, and operational documentation lives here
+Project architecture, setup, and operational documentation lives here.
 
 ## Service Documentation
 

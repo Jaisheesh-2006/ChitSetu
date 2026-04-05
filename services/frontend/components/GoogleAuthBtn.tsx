@@ -16,8 +16,9 @@ export default function GoogleAuthBtn({ variant }: { variant?: Variant }) {
     }
   } catch {}
   const go = async () => {
-    const url = process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL;
-    if (!url) throw new Error("NEXT_PUBLIC_AUTH_CALLBACK_URL required");
+    const url = process.env.NEXT_PUBLIC_AUTH_CALLBACK_URL
+      ?? (typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : "");
+    if (!url) throw new Error("Google auth callback URL unavailable");
     const { error } = await getSupabaseClient().auth.signInWithOAuth({ provider: "google", options: { redirectTo: url } });
     if (error) throw error;
   };
