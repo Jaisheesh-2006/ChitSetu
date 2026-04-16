@@ -1,5 +1,7 @@
 # ChitSetu
 
+Project URL = https://chit-setu.vercel.app
+
 ChitSetu is a decentralized chit fund platform that combines modern fintech workflows (KYC, risk scoring, digital payments) with blockchain-backed recording and real-time auction orchestration.
 
 This repo contains:
